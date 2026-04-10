@@ -42,7 +42,7 @@
   </style>
 
   <script>
-    // 動態生成 PWA 憑證，讓 Android 也能加入桌面
+    // 動態生成 PWA 憑證
     document.addEventListener("DOMContentLoaded", () => {
       const manifest = {
         name: "Minimal Calendar",
@@ -63,7 +63,6 @@
 <body class="bg-[#f7f6f2] m-0 p-0">
   <div id="root"></div>
 
-  <!-- React 應用程式核心 -->
   <script type="text/babel">
     const { useState, useMemo, useEffect, useRef } = React;
 
@@ -78,7 +77,6 @@
       measurementId: "G-N8CGBLE373"
     };
 
-    // 避免重複初始化
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
     }
@@ -94,49 +92,13 @@
     };
 
     // --- 日期輔助函數 ---
-    const parseDateLocal = (dateStr) => {
-      if (!dateStr) return new Date();
-      const [y, m, d] = dateStr.split('-');
-      return new Date(y, m - 1, d);
-    };
-    const formatDate = (date) => {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
-    const formatTimestamp = (timestamp) => {
-      if (!timestamp) return '';
-      const date = new Date(timestamp);
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      const hours = String(date.getHours()).padStart(2, '0');
-      const minutes = String(date.getMinutes()).padStart(2, '0');
-      return `${month}.${day} ${hours}:${minutes}`;
-    };
-    const getStartOfWeek = (dateStr) => {
-      const date = parseDateLocal(dateStr);
-      const day = date.getDay();
-      const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-      const start = new Date(date);
-      start.setDate(diff);
-      return formatDate(start);
-    };
-    const addDays = (dateStr, days) => {
-      const date = parseDateLocal(dateStr);
-      date.setDate(date.getDate() + days);
-      return formatDate(date);
-    };
-    const getDayName = (dateStr) => {
-      const days = ['日', '一', '二', '三', '四', '五', '六'];
-      return '週' + days[parseDateLocal(dateStr).getDay()];
-    };
-    const checkIsOverdue = (task, todayStr) => {
-      if (task.completed) return false;
-      if (task.type === 'daily') return task.date < todayStr;
-      if (task.type === 'weekly') return task.date < getStartOfWeek(todayStr);
-      return false;
-    };
+    const parseDateLocal = (dateStr) => { if (!dateStr) return new Date(); const [y, m, d] = dateStr.split('-'); return new Date(y, m - 1, d); };
+    const formatDate = (date) => { const y = date.getFullYear(); const m = String(date.getMonth() + 1).padStart(2, '0'); const d = String(date.getDate()).padStart(2, '0'); return `${y}-${m}-${d}`; };
+    const formatTimestamp = (timestamp) => { if (!timestamp) return ''; const date = new Date(timestamp); const m = String(date.getMonth() + 1).padStart(2, '0'); const d = String(date.getDate()).padStart(2, '0'); const h = String(date.getHours()).padStart(2, '0'); const min = String(date.getMinutes()).padStart(2, '0'); return `${m}.${d} ${h}:${min}`; };
+    const getStartOfWeek = (dateStr) => { const date = parseDateLocal(dateStr); const day = date.getDay(); const diff = date.getDate() - day + (day === 0 ? -6 : 1); const start = new Date(date); start.setDate(diff); return formatDate(start); };
+    const addDays = (dateStr, days) => { const date = parseDateLocal(dateStr); date.setDate(date.getDate() + days); return formatDate(date); };
+    const getDayName = (dateStr) => { const days = ['日', '一', '二', '三', '四', '五', '六']; return '週' + days[parseDateLocal(dateStr).getDay()]; };
+    const checkIsOverdue = (task, todayStr) => { if (task.completed) return false; if (task.type === 'daily') return task.date < todayStr; if (task.type === 'weekly') return task.date < getStartOfWeek(todayStr); return false; };
 
     // --- 左滑互動組件 (任務與章節) ---
     const SwipeableItem = ({ task, onToggle, onEdit, onDelete, isOverdue, isOpen, onOpen, onClose, hideCheck = false }) => {
@@ -170,12 +132,8 @@
       return (
         <div className="relative mb-2 rounded-xl overflow-hidden group h-full max-h-min border border-transparent hover:border-[#ebeae5] transition-colors">
           <div className="absolute right-0 top-0 bottom-0 flex h-full rounded-xl overflow-hidden">
-            <button onClick={(e) => { e.stopPropagation(); onClose(); onEdit(task); }} className="w-[50px] bg-[#d3dbd8] hover:bg-[#c2cbc8] text-[#5c5d5a] flex flex-col justify-center items-center">
-              <i className="fas fa-pen text-base"></i>
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); onClose(); onDelete(task.id); }} className="w-[50px] bg-[#e3d1cf] hover:bg-[#d4bebb] text-[#8c6b66] flex flex-col justify-center items-center">
-              <i className="fas fa-trash text-base"></i>
-            </button>
+            <button onClick={(e) => { e.stopPropagation(); onClose(); onEdit(task); }} className="w-[50px] bg-[#d3dbd8] hover:bg-[#c2cbc8] text-[#5c5d5a] flex flex-col justify-center items-center"><i className="fas fa-pen text-base"></i></button>
+            <button onClick={(e) => { e.stopPropagation(); onClose(); onDelete(task.id); }} className="w-[50px] bg-[#e3d1cf] hover:bg-[#d4bebb] text-[#8c6b66] flex flex-col justify-center items-center"><i className="fas fa-trash text-base"></i></button>
           </div>
           <div
             className={`relative z-10 flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-transform h-full ${task.completed ? 'bg-[#fbfaf9] opacity-70' : theme.card}`}
@@ -215,7 +173,7 @@
       );
     };
 
-    // --- 左滑互動組件 (備忘錄專用) ---
+    // --- 左滑互動組件 (備忘錄) ---
     const SwipeableMemoItem = ({ memo, onEdit, onDelete, isOpen, onOpen, onClose }) => {
       const [translateX, setTranslateX] = useState(0);
       const [isDragging, setIsDragging] = useState(false);
@@ -320,12 +278,24 @@
       const currentWeekStart = useMemo(() => getStartOfWeek(currentDateStr), [currentDateStr]);
       const weekDays = useMemo(() => Array.from({ length: 7 }).map((_, i) => addDays(currentWeekStart, i)), [currentWeekStart]);
 
+      // ★★★ Firebase 原生驗證監聽 (不需要匿名登入了) ★★★
       useEffect(() => {
-        auth.signInAnonymously().catch(err => console.error(err));
-        const unsubscribe = auth.onAuthStateChanged((u) => { setRealUser(u); setAuthLoading(false); });
+        const unsubscribe = auth.onAuthStateChanged((user) => {
+          if (user) {
+            setRealUser(user);
+            setCurrentUserEmail(user.email || '');
+            setIsAppUnlocked(true);
+          } else {
+            setRealUser(null);
+            setCurrentUserEmail('');
+            setIsAppUnlocked(false);
+          }
+          setAuthLoading(false);
+        });
         return () => unsubscribe();
       }, []);
 
+      // --- 資料監聽 ---
       useEffect(() => {
         if (!realUser || !isAppUnlocked) return;
         const userRef = db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid);
@@ -348,30 +318,39 @@
         return () => { unsubTasks(); unsubCd(); unsubBooks(); unsubChapters(); unsubMemos(); };
       }, [realUser, isAppUnlocked, currentUserEmail]);
 
+      // ★★★ Firebase 原生登入與註冊 ★★★
       const handleAuthSubmit = async (e) => {
-        e.preventDefault(); if (!realUser) return;
+        e.preventDefault();
         setAuthError(''); setAuthSuccessMsg('');
-        const safeEmailId = authEmail.replace(/[^a-zA-Z0-9]/g, '_');
-        const accountRef = db.collection('artifacts').doc(appIdStr).collection('public').doc('data').collection('accounts').doc(safeEmailId);
         
         try {
           if (isLoginMode) {
-            const docSnap = await accountRef.get();
-            if (docSnap.exists && docSnap.data().password === authPassword) {
-              setCurrentUserEmail(authEmail); setIsAppUnlocked(true); setAuthPassword('');
-            } else { setAuthError('帳號或密碼錯誤'); }
+            await auth.signInWithEmailAndPassword(authEmail, authPassword);
+            // 登入成功後，onAuthStateChanged 會自動將 isAppUnlocked 設為 true
           } else {
             if (authPassword !== authConfirmPassword) { setAuthError('兩次密碼不一致'); return; }
             if (authPassword.length < 6) { setAuthError('密碼需至少6碼'); return; }
-            const docSnap = await accountRef.get();
-            if (docSnap.exists) { setAuthError('此信箱已被註冊'); return; }
-            await accountRef.set({ email: authEmail, password: authPassword });
-            setAuthSuccessMsg('註冊成功！請重新登入。'); setIsLoginMode(true); setAuthPassword(''); setAuthConfirmPassword('');
+            
+            await auth.createUserWithEmailAndPassword(authEmail, authPassword);
+            setAuthSuccessMsg('註冊成功！請使用新帳號登入。'); 
+            await auth.signOut(); // 註冊後強制重新登入
+            setIsLoginMode(true); 
+            setAuthPassword(''); 
+            setAuthConfirmPassword('');
           }
-        } catch (err) { console.error(err); setAuthError('系統連線錯誤，請確認Firebase規則是否正確'); }
+        } catch (err) {
+          console.error(err);
+          if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+            setAuthError('帳號或密碼錯誤');
+          } else if (err.code === 'auth/email-already-in-use') {
+            setAuthError('此信箱已被註冊');
+          } else {
+            setAuthError('連線錯誤：請確認 Firebase Authentication 的信箱密碼登入已開啟'); 
+          }
+        }
       };
 
-      const handleLogout = () => { setIsAppUnlocked(false); setCurrentUserEmail(''); setAuthEmail(''); setCurrentTab('tasks'); setViewMode('week'); };
+      const handleLogout = () => { auth.signOut(); setCurrentTab('tasks'); setViewMode('week'); };
 
       // --- Task ---
       const toggleTask = async (task) => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('tasks').doc(task.id).set({ ...task, completed: !task.completed });
@@ -462,7 +441,6 @@
       };
       const handleSaveProfile = async () => { if(!realUser) return; await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('profile').doc('info').set(editProfileData); setProfile(editProfileData); setIsEditingProfile(false); };
 
-
       // --- 渲染畫面 ---
       if (authLoading) return <div className={`min-h-screen ${theme.bg}`}></div>;
       
@@ -490,9 +468,7 @@
           <header className={`sticky top-0 z-30 bg-[#f7f6f2]/90 backdrop-blur-md px-6 py-5 flex items-center justify-between`}>
             <div className={`text-lg font-medium tracking-widest ${theme.textMain} flex items-center gap-2`}>MINIMAL<span className="text-[10px] text-[#a3a6a1]">CALENDAR</span></div>
             <div className={`w-10 h-10 rounded-full ${theme.card} border ${theme.border} flex items-center justify-center overflow-hidden shadow-sm cursor-pointer hover:border-[#9ba8a2] transition-colors`} onClick={() => setCurrentTab('profile')}>
-              {/* 加入您專屬圖片的回退機制 */}
-              <img src={profile.avatar || './IMG_2701.jpeg'} alt="avatar" className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.style.display='none'; e.target.nextSibling.style.display='block'; }} />
-              <i className={`fas fa-user text-lg ${theme.textMuted}`} style={{display: 'none'}}></i>
+              {profile.avatar ? <img src={profile.avatar} alt="avatar" className="w-full h-full object-cover" /> : <i className={`fas fa-user text-lg ${theme.textMuted}`}></i>}
             </div>
           </header>
 
@@ -746,4 +722,5 @@
   </script>
 </body>
 </html>
+
 
