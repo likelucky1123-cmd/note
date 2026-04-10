@@ -23,8 +23,8 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
   <!-- 3. 載入 React 核心 -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <!-- 4. 載入 Firebase 穩定版引擎 -->
@@ -67,7 +67,7 @@
   <script type="text/babel">
     const { useState, useMemo, useEffect, useRef } = React;
 
-    // --- Firebase 初始化 (使用您的專屬金鑰) ---
+    // --- Firebase 初始化 (您的專屬金鑰) ---
     const firebaseConfig = {
       apiKey: "AIzaSyDKVLVYRGvsiuFmQIXuFCU9O2TBVVRb3gk",
       authDomain: "popcorn-ee2cc.firebaseapp.com",
@@ -78,7 +78,10 @@
       measurementId: "G-N8CGBLE373"
     };
 
-    firebase.initializeApp(firebaseConfig);
+    // 避免重複初始化
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
     const auth = firebase.auth();
     const db = firebase.firestore();
     const appIdStr = "minimal-calendar-app"; 
@@ -366,7 +369,7 @@
             await accountRef.set({ email: authEmail, password: authPassword });
             setAuthSuccessMsg('註冊成功！請重新登入。'); setIsLoginMode(true); setAuthPassword(''); setAuthConfirmPassword('');
           }
-        } catch (err) { console.error(err); setAuthError('系統連線錯誤，請稍後再試'); }
+        } catch (err) { console.error(err); setAuthError('系統連線錯誤，請確認Firebase的規則是否允許讀寫'); }
       };
 
       const handleLogout = () => { setIsAppUnlocked(false); setCurrentUserEmail(''); setAuthEmail(''); setCurrentTab('tasks'); setViewMode('week'); };
@@ -488,7 +491,9 @@
           <header className={`sticky top-0 z-30 bg-[#f7f6f2]/90 backdrop-blur-md px-6 py-5 flex items-center justify-between`}>
             <div className={`text-lg font-medium tracking-widest ${theme.textMain} flex items-center gap-2`}>MINIMAL<span className="text-[10px] text-[#a3a6a1]">CALENDAR</span></div>
             <div className={`w-10 h-10 rounded-full ${theme.card} border ${theme.border} flex items-center justify-center overflow-hidden shadow-sm cursor-pointer hover:border-[#9ba8a2] transition-colors`} onClick={() => setCurrentTab('profile')}>
-              {profile.avatar ? <img src={profile.avatar} alt="avatar" className="w-full h-full object-cover" /> : <i className={`fas fa-user text-lg ${theme.textMuted}`}></i>}
+              {/* 加入您專屬圖片的回退機制 */}
+              <img src={profile.avatar || './IMG_2701.jpeg'} alt="avatar" className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.style.display='none'; e.target.nextSibling.style.display='block'; }} />
+              <i className={`fas fa-user text-lg ${theme.textMuted}`} style={{display: 'none'}}></i>
             </div>
           </header>
 
@@ -649,7 +654,7 @@
                 <div className={`p-8 rounded-3xl ${theme.card} border ${theme.border} shadow-sm`}>
                   {!isEditingProfile ? (
                     <>
-                      <div className="flex justify-center mb-4"><div className={`w-24 h-24 rounded-full ${theme.bg} border ${theme.border} flex items-center justify-center overflow-hidden`}><img src={profile.avatar || './IMG_2701.jpeg'} alt="avatar" className="w-full h-full object-cover" /></div></div>
+                      <div className="flex justify-center mb-4"><div className={`w-24 h-24 rounded-full ${theme.bg} border ${theme.border} flex items-center justify-center overflow-hidden`}><img src={profile.avatar || './IMG_2701.jpeg'} alt="avatar" className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.style.display='none'; e.target.nextSibling.style.display='block'; }} /><i className={`fas fa-user text-3xl ${theme.textMuted}`} style={{display: 'none'}}></i></div></div>
                       <div className="text-center space-y-4">
                         <h2 className={`text-xl font-medium ${theme.textMain} tracking-wider`}>{profile.nickname}</h2><p className={`text-[11px] ${theme.textMuted}`}>{currentUserEmail}</p><p className={`text-sm ${theme.textMuted} pt-2`}>{profile.bio}</p>
                         <div className="pt-6 flex gap-3 justify-center"><button onClick={() => setIsEditingProfile(true)} className={`px-6 py-2 rounded-full border ${theme.border} text-sm ${theme.textMain}`}>編輯</button><button onClick={handleLogout} className={`px-6 py-2 rounded-full border border-[#e3d1cf] text-sm text-[#c29b95]`}>登出</button></div>
@@ -659,7 +664,7 @@
                     <div className="space-y-6">
                       <div className="text-center mb-6">
                         <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-3`}>更換照片 (PHOTO)</label>
-                        <div className="flex justify-center"><div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}><div className={`w-20 h-20 rounded-full ${theme.bg} border ${theme.border} flex items-center justify-center overflow-hidden`}><img src={editProfileData.avatar || './IMG_2701.jpeg'} alt="avatar" className="w-full h-full object-cover" /></div><div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100"><i className="fas fa-camera text-white text-xl"></i></div><input type="file" className="hidden" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" /></div></div>
+                        <div className="flex justify-center"><div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}><div className={`w-20 h-20 rounded-full ${theme.bg} border ${theme.border} flex items-center justify-center overflow-hidden`}><img src={editProfileData.avatar || './IMG_2701.jpeg'} alt="avatar" className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.style.display='none'; e.target.nextSibling.style.display='block'; }} /><i className={`fas fa-user text-2xl ${theme.textMuted}`} style={{display: 'none'}}></i></div><div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100"><i className="fas fa-camera text-white text-xl"></i></div><input type="file" className="hidden" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" /></div></div>
                       </div>
                       <div><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>NICKNAME</label><input type="text" value={editProfileData.nickname} onChange={e => setEditProfileData({...editProfileData, nickname: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} /></div>
                       <div><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>BIO</label><textarea value={editProfileData.bio} onChange={e => setEditProfileData({...editProfileData, bio: e.target.value})} rows="3" className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl resize-none`} /></div>
@@ -746,7 +751,7 @@
       );
     }
 
-    const root = createRoot(document.getElementById('root'));
+    const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
 </body>
