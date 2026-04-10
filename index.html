@@ -1,1126 +1,725 @@
-```react
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { 
-  CalendarDays, X, Pencil, Trash2, GripVertical,
-  Clock, User, LogOut, CheckCircle2, Circle, ChevronLeft, ChevronRight, Plus, Camera, BookOpen, ChevronDown, ChevronUp, FileText, Download
-} from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged 
-} from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, getDoc } from 'firebase/firestore';
-
-// --- Firebase 初始化 (您的專屬金鑰) ---
-const firebaseConfig = {
-  apiKey: "AIzaSyDKVLVYRGvsiuFmQIXuFCU9O2TBVVRb3gk",
-  authDomain: "popcorn-ee2cc.firebaseapp.com",
-  projectId: "popcorn-ee2cc",
-  storageBucket: "popcorn-ee2cc.firebasestorage.app",
-  messagingSenderId: "1095484888994",
-  appId: "1:1095484888994:web:3d39b271a04d0935b0c4fb",
-  measurementId: "G-N8CGBLE373"
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-
-const appId = "minimal-calendar-app"; 
-
-// --- 莫蘭迪色系常數 ---
-const theme = {
-  bg: 'bg-[#f7f6f2]', 
-  card: 'bg-white',
-  primary: 'bg-[#9ba8a2]', 
-  primaryHover: 'hover:bg-[#85928c]',
-  primaryText: 'text-[#6a7c75]',
-  textMain: 'text-[#5c5d5a]', 
-  textMuted: 'text-[#a3a6a1]', 
-  border: 'border-[#ebeae5]',
-  accent: 'text-[#c29b95]', 
-  accentBg: 'bg-[#f5eeed]',
-};
-
-// --- 日期輔助函數 ---
-const parseDateLocal = (dateStr) => {
-  if (!dateStr) return new Date();
-  const [y, m, d] = dateStr.split('-');
-  return new Date(y, m - 1, d);
-};
-
-const formatDate = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const formatTimestamp = (timestamp) => {
-  if (!timestamp) return '';
-  const date = new Date(timestamp);
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return `${month}.${day} ${hours}:${minutes}`;
-};
-
-const getStartOfWeek = (dateStr) => {
-  const date = parseDateLocal(dateStr);
-  const day = date.getDay();
-  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-  const start = new Date(date);
-  start.setDate(diff);
-  return formatDate(start);
-};
-
-const addDays = (dateStr, days) => {
-  const date = parseDateLocal(dateStr);
-  date.setDate(date.getDate() + days);
-  return formatDate(date);
-};
-
-const getDayName = (dateStr) => {
-  const days = ['日', '一', '二', '三', '四', '五', '六'];
-  return '週' + days[parseDateLocal(dateStr).getDay()];
-};
-
-const checkIsOverdue = (task, todayStr) => {
-  if (task.completed) return false;
-  if (task.type === 'daily') return task.date < todayStr;
-  if (task.type === 'weekly') return task.date < getStartOfWeek(todayStr);
-  return false;
-};
-
-// --- 左滑互動組件 ---
-const SwipeableItem = ({ task, onToggle, onEdit, onDelete, isOverdue, isOpen, onOpen, onClose, hideCheck = false }) => {
-  const [translateX, setTranslateX] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-  const startXRef = useRef(0);
-  const currentTranslateRef = useRef(0);
-  const maxTranslate = -100; 
-  const snapThreshold = -30;
-
-  useEffect(() => {
-    if (isOpen) { setTranslateX(maxTranslate); currentTranslateRef.current = maxTranslate; } 
-    else { setTranslateX(0); currentTranslateRef.current = 0; }
-  }, [isOpen, maxTranslate]);
-
-  const handleStart = (clientX) => { startXRef.current = clientX; setIsDragging(true); };
-  const handleMove = (clientX) => {
-    if (!isDragging) return;
-    const diff = clientX - startXRef.current;
-    let newTranslate = currentTranslateRef.current + diff;
-    if (newTranslate > 0) newTranslate = 0;
-    if (newTranslate < maxTranslate - 20) newTranslate = maxTranslate - 20; 
-    setTranslateX(newTranslate);
-  };
-  const handleEnd = () => {
-    if (!isDragging) return;
-    setIsDragging(false);
-    if (translateX < snapThreshold || (isOpen && translateX < maxTranslate + 20)) onOpen();
-    else onClose();
-  };
-
-  return (
-    <div className="relative mb-2 rounded-xl overflow-hidden group h-full max-h-min border border-transparent hover:border-[#ebeae5] transition-colors">
-      <div className="absolute right-0 top-0 bottom-0 flex h-full rounded-xl overflow-hidden">
-        <button onClick={(e) => { e.stopPropagation(); onClose(); onEdit(task); }} className="w-[50px] bg-[#d3dbd8] hover:bg-[#c2cbc8] text-[#5c5d5a] flex flex-col justify-center items-center transition-colors">
-          <Pencil size={16} strokeWidth={1.5} />
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); onClose(); onDelete(task.id); }} className="w-[50px] bg-[#e3d1cf] hover:bg-[#d4bebb] text-[#8c6b66] flex flex-col justify-center items-center transition-colors">
-          <Trash2 size={16} strokeWidth={1.5} />
-        </button>
-      </div>
-
-      <div
-        className={`relative z-10 flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-transform h-full
-          ${task.completed ? 'bg-[#fbfaf9] opacity-70' : theme.card}`}
-        style={{ transform: `translateX(${translateX}px)`, transition: isDragging ? 'none' : 'transform 0.2s ease-out' }}
-        onTouchStart={e => handleStart(e.touches[0].clientX)} onTouchMove={e => handleMove(e.touches[0].clientX)} onTouchEnd={handleEnd}
-        onMouseDown={e => handleStart(e.clientX)} onMouseMove={e => handleMove(e.clientX)} onMouseUp={handleEnd} onMouseLeave={() => { if(isDragging) handleEnd() }}
-      >
-        {!hideCheck && (
-          <div className="mt-0.5 flex-shrink-0" onClick={(e) => { e.stopPropagation(); onToggle(task); }}>
-            {task.completed ? <CheckCircle2 size={18} strokeWidth={1.5} className="text-[#a3a6a1]" /> : <Circle size={18} strokeWidth={1.5} className="text-[#d1d5db]" />}
-          </div>
-        )}
-        
-        <div className="flex-1 min-w-0 flex flex-col select-none pt-0.5">
-          {task.type === 'weekly' && task.showWeeklyBadge && (
-            <span className={`text-[9px] bg-[#f0f2f1] ${theme.primaryText} px-1.5 py-0.5 rounded border ${theme.border} tracking-widest mb-1.5 w-max font-medium`}>
-              WEEKLY GOAL
-            </span>
-          )}
-          
-          <div className="flex items-center justify-between">
-            <span className={`text-[15px] leading-relaxed break-words tracking-wide ${task.completed ? 'line-through text-[#a3a6a1]' : theme.textMain}`}>
-              {task.title}
-            </span>
-            {task.isChapter && task.updatedAt && (
-              <span className={`text-[10px] ${theme.textMuted} tracking-wider ml-2 flex-shrink-0`}>
-                {formatTimestamp(task.updatedAt)}
-              </span>
-            )}
-          </div>
-
-          {isOverdue && !task.completed && (
-            <span className={`text-[11px] ${theme.accent} font-medium mt-1 tracking-wider`}>已逾期</span>
-          )}
-          
-          {task.isChapter && (
-            <div className="mt-2">
-               <div className="flex justify-between items-end mb-1">
-                 <span className={`text-[10px] tracking-wider ${theme.textMuted}`}>{task.currentPage} / {task.totalPages} 頁</span>
-                 <span className={`text-[11px] font-medium tracking-widest ${task.percentage === 100 ? theme.primaryText : theme.textMain}`}>{task.percentage}%</span>
-               </div>
-               <div className="h-1.5 w-full bg-[#ebeae5] rounded-full overflow-hidden">
-                 <div className={`h-full transition-all duration-500 ease-out rounded-full ${task.percentage === 100 ? 'bg-[#9ba8a2]' : 'bg-[#6a7c75]'}`} style={{ width: `${task.percentage}%` }}/>
-               </div>
-               {task.notes && <p className={`mt-2 text-[12px] ${theme.textMuted} leading-relaxed bg-[#fbfaf9] p-2 rounded-lg border ${theme.border}`}>{task.notes}</p>}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// --- 左滑互動組件 (專門給備忘錄使用) ---
-const SwipeableMemoItem = ({ memo, onEdit, onDelete, isOpen, onOpen, onClose }) => {
-  const [translateX, setTranslateX] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-  const startXRef = useRef(0);
-  const currentTranslateRef = useRef(0);
-  const maxTranslate = -100; 
-  const snapThreshold = -30;
-
-  useEffect(() => {
-    if (isOpen) { setTranslateX(maxTranslate); currentTranslateRef.current = maxTranslate; } 
-    else { setTranslateX(0); currentTranslateRef.current = 0; }
-  }, [isOpen, maxTranslate]);
-
-  const handleStart = (clientX) => { startXRef.current = clientX; setIsDragging(true); };
-  const handleMove = (clientX) => {
-    if (!isDragging) return;
-    const diff = clientX - startXRef.current;
-    let newTranslate = currentTranslateRef.current + diff;
-    if (newTranslate > 0) newTranslate = 0;
-    if (newTranslate < maxTranslate - 20) newTranslate = maxTranslate - 20; 
-    setTranslateX(newTranslate);
-  };
-  const handleEnd = () => {
-    if (!isDragging) return;
-    setIsDragging(false);
-    if (translateX < snapThreshold || (isOpen && translateX < maxTranslate + 20)) onOpen();
-    else onClose();
-  };
-
-  return (
-    <div className="relative group overflow-hidden bg-white">
-      <div className="absolute right-0 top-0 bottom-0 flex h-full">
-        <button onClick={(e) => { e.stopPropagation(); onClose(); onEdit(memo); }} className="w-[50px] bg-[#d3dbd8] hover:bg-[#c2cbc8] text-[#5c5d5a] flex flex-col justify-center items-center transition-colors">
-          <Pencil size={16} strokeWidth={1.5} />
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); onClose(); onDelete(memo.id); }} className="w-[50px] bg-[#e3d1cf] hover:bg-[#d4bebb] text-[#8c6b66] flex flex-col justify-center items-center transition-colors">
-          <Trash2 size={16} strokeWidth={1.5} />
-        </button>
-      </div>
-
-      <div
-        className="relative z-10 flex flex-col py-4 px-2 bg-white transition-transform h-full cursor-pointer"
-        style={{ transform: `translateX(${translateX}px)`, transition: isDragging ? 'none' : 'transform 0.2s ease-out' }}
-        onTouchStart={e => handleStart(e.touches[0].clientX)} onTouchMove={e => handleMove(e.touches[0].clientX)} onTouchEnd={handleEnd}
-        onMouseDown={e => handleStart(e.clientX)} onMouseMove={e => handleMove(e.clientX)} onMouseUp={handleEnd} onMouseLeave={() => { if(isDragging) handleEnd() }}
-      >
-        <p className={`text-[15px] leading-loose tracking-wide ${theme.textMain} whitespace-pre-wrap`}>
-          {memo.content}
-        </p>
-        <div className="flex items-center justify-end mt-3">
-          <span className={`text-[11px] ${theme.textMuted} tracking-widest`}>
-            {formatTimestamp(memo.createdAt)}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-
-// --- 主要 App 組件 ---
-export default function App() {
-  const [realUser, setRealUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
+```html
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Minimal Calendar</title>
   
-  const [isAppUnlocked, setIsAppUnlocked] = useState(false);
-  const [currentUserEmail, setCurrentUserEmail] = useState('');
-  const [currentTab, setCurrentTab] = useState('tasks'); 
-  const [viewMode, setViewMode] = useState('week'); 
-  const [showPWAPrompt, setShowPWAPrompt] = useState(true);
+  <!-- 讓手機加入桌面時變成全螢幕 App 的設定 -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="./IMG_2701.jpeg">
+  <link rel="manifest" href="./manifest.json">
 
-  // 登入表單
-  const [isLoginMode, setIsLoginMode] = useState(true);
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authConfirmPassword, setAuthConfirmPassword] = useState('');
-  const [authError, setAuthError] = useState('');
-  const [authSuccessMsg, setAuthSuccessMsg] = useState('');
+  <!-- 引入 Tailwind CSS 與 Babel 翻譯器 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  // 任務
-  const [tasks, setTasks] = useState([]);
-  const [currentDateStr, setCurrentDateStr] = useState(formatDate(new Date())); 
-  const todayStr = useMemo(() => formatDate(new Date()), []);
-  const [openSwipeId, setOpenSwipeId] = useState(null);
-  
-  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
-  const [modalType, setModalType] = useState('daily');
-  const [modalDate, setModalDate] = useState(currentDateStr);
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [editingTaskId, setEditingTaskId] = useState(null);
+  <style>
+    /* 自訂捲軸樣式 */
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #d3dbd8; border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #9ba8a2; }
+    body { font-family: sans-serif; -webkit-tap-highlight-color: transparent; }
+  </style>
+</head>
+<body class="bg-[#f7f6f2] m-0 p-0">
+  <div id="root"></div>
 
-  // 倒數日
-  const [countdowns, setCountdowns] = useState([]);
-  const [isCountdownModalOpen, setIsCountdownModalOpen] = useState(false);
-  const [cdTitle, setCdTitle] = useState('');
-  const [cdDate, setCdDate] = useState(todayStr);
+  <!-- React 應用程式核心 -->
+  <script type="text/babel" data-type="module">
+    import React, { useState, useMemo, useEffect, useRef } from 'https://esm.sh/react@18.2.0';
+    import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
+    import { 
+      CalendarDays, X, Pencil, Trash2, GripVertical,
+      Clock, User, LogOut, CheckCircle2, Circle, ChevronLeft, ChevronRight, 
+      Plus, Camera, BookOpen, ChevronDown, ChevronUp, FileText, Download
+    } from 'https://esm.sh/lucide-react@0.292.0?external=react';
+    import { initializeApp } from 'https://esm.sh/firebase@10.7.1/app';
+    import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://esm.sh/firebase@10.7.1/auth';
+    import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, getDoc } from 'https://esm.sh/firebase@10.7.1/firestore';
 
-  // 讀書進度
-  const [books, setBooks] = useState([]);
-  const [chapters, setChapters] = useState([]);
-  const [expandedBookId, setExpandedBookId] = useState(null);
-  const [isBookModalOpen, setIsBookModalOpen] = useState(false);
-  const [newBookTitle, setNewBookTitle] = useState('');
-  const [isChapterModalOpen, setIsChapterModalOpen] = useState(false);
-  const [editingChapterId, setEditingChapterId] = useState(null);
-  const [targetBookIdForChapter, setTargetBookIdForChapter] = useState(null);
-  const [chapterForm, setChapterForm] = useState({ title: '', totalPages: '', currentPage: '', notes: '' });
-
-  // 備忘錄
-  const [memos, setMemos] = useState([]);
-  const [memoInput, setMemoInput] = useState('');
-  const [editingMemoId, setEditingMemoId] = useState(null);
-  const memoInputRef = useRef(null);
-
-  // 個人檔案
-  const [profile, setProfile] = useState({ nickname: '', bio: '', avatar: '' });
-  const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [editProfileData, setEditProfileData] = useState({ nickname: '', bio: '', avatar: '' });
-  const fileInputRef = useRef(null);
-
-  const currentWeekStart = useMemo(() => getStartOfWeek(currentDateStr), [currentDateStr]);
-  const weekDays = useMemo(() => Array.from({ length: 7 }).map((_, i) => addDays(currentWeekStart, i)), [currentWeekStart]);
-
-  // --- 動態 PWA (加入主畫面) 配置注入 ---
-  useEffect(() => {
-    if (document.getElementById('pwa-setup')) return;
-    
-    const metaAppCapable = document.createElement('meta');
-    metaAppCapable.name = 'apple-mobile-web-app-capable';
-    metaAppCapable.content = 'yes';
-    document.head.appendChild(metaAppCapable);
-
-    const metaStatus = document.createElement('meta');
-    metaStatus.name = 'apple-mobile-web-app-status-bar-style';
-    metaStatus.content = 'black-translucent';
-    document.head.appendChild(metaStatus);
-
-    // ★★★ 將圖示換成您的照片檔案 ★★★
-    // 假設您的檔案名稱為 IMG_2701.jpeg，並且放在專案的 public 目錄下
-    const iconPath = './IMG_2701.jpeg'; 
-    
-    // Apple Touch Icon
-    const linkIcon = document.createElement('link');
-    linkIcon.rel = 'apple-touch-icon';
-    linkIcon.href = iconPath;
-    document.head.appendChild(linkIcon);
-
-    // PWA Manifest
-    const manifest = {
-      name: "Minimal Calendar",
-      short_name: "MinimalCal",
-      display: "standalone",
-      background_color: "#f7f6f2",
-      theme_color: "#9ba8a2",
-      icons: [
-        { src: iconPath, sizes: "192x192", type: "image/jpeg" },
-        { src: iconPath, sizes: "512x512", type: "image/jpeg" }
-      ]
+    // --- Firebase 初始化 (已寫入您的金鑰) ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyDKVLVYRGvsiuFmQIXuFCU9O2TBVVRb3gk",
+      authDomain: "popcorn-ee2cc.firebaseapp.com",
+      projectId: "popcorn-ee2cc",
+      storageBucket: "popcorn-ee2cc.firebasestorage.app",
+      messagingSenderId: "1095484888994",
+      appId: "1:1095484888994:web:3d39b271a04d0935b0c4fb",
+      measurementId: "G-N8CGBLE373"
     };
-    
-    const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-    const linkManifest = document.createElement('link');
-    linkManifest.id = 'pwa-setup';
-    linkManifest.rel = 'manifest';
-    linkManifest.href = URL.createObjectURL(blob);
-    document.head.appendChild(linkManifest);
-  }, []);
 
-  // --- 底層 Auth 初始化 ---
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        await signInAnonymously(auth);
-      } catch (error) {
-        console.error('底層驗證初始化失敗:', error);
-      }
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const appIdStr = "minimal-calendar-app"; // 資料庫根目錄名稱
+
+    // --- 莫蘭迪色系常數 ---
+    const theme = {
+      bg: 'bg-[#f7f6f2]', card: 'bg-white', primary: 'bg-[#9ba8a2]', primaryHover: 'hover:bg-[#85928c]',
+      primaryText: 'text-[#6a7c75]', textMain: 'text-[#5c5d5a]', textMuted: 'text-[#a3a6a1]', 
+      border: 'border-[#ebeae5]', accent: 'text-[#c29b95]', accentBg: 'bg-[#f5eeed]',
     };
-    initAuth();
 
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setRealUser(u);
-      setAuthLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // --- 資料監聽 ---
-  useEffect(() => {
-    if (!realUser || !isAppUnlocked) return;
-    
-    const tasksRef = collection(db, 'artifacts', appId, 'users', realUser.uid, 'tasks');
-    const unsubTasks = onSnapshot(tasksRef, (snapshot) => setTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-
-    const cdRef = collection(db, 'artifacts', appId, 'users', realUser.uid, 'countdowns');
-    const unsubCd = onSnapshot(cdRef, (snapshot) => setCountdowns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-
-    const booksRef = collection(db, 'artifacts', appId, 'users', realUser.uid, 'books');
-    const unsubBooks = onSnapshot(booksRef, (snapshot) => setBooks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-
-    const chaptersRef = collection(db, 'artifacts', appId, 'users', realUser.uid, 'chapters');
-    const unsubChapters = onSnapshot(chaptersRef, (snapshot) => setChapters(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-
-    const memosRef = collection(db, 'artifacts', appId, 'users', realUser.uid, 'memos');
-    const unsubMemos = onSnapshot(memosRef, (snapshot) => setMemos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-
-    const fetchProfile = async () => {
-      const pRef = doc(db, 'artifacts', appId, 'users', realUser.uid, 'profile', 'info');
-      const pSnap = await getDoc(pRef);
-      if (pSnap.exists()) {
-        const data = pSnap.data();
-        setProfile({ ...data, avatar: data.avatar || '' });
-        setEditProfileData({ ...data, avatar: data.avatar || '' });
-      } else {
-        const defaultProfile = { nickname: currentUserEmail.split('@')[0] || 'User', bio: '生活需要一點簡約', avatar: '' };
-        setProfile(defaultProfile);
-        setEditProfileData(defaultProfile);
-      }
+    // --- 日期輔助函數 ---
+    const parseDateLocal = (dateStr) => {
+      if (!dateStr) return new Date();
+      const [y, m, d] = dateStr.split('-');
+      return new Date(y, m - 1, d);
     };
-    fetchProfile();
-
-    return () => { unsubTasks(); unsubCd(); unsubBooks(); unsubChapters(); unsubMemos(); };
-  }, [realUser, isAppUnlocked, currentUserEmail]);
-
-  // --- 模擬登入/註冊處理 ---
-  const handleAuthSubmit = async (e) => {
-    e.preventDefault();
-    if (!realUser) return;
-    setAuthError(''); setAuthSuccessMsg('');
-    const safeEmailId = authEmail.replace(/[^a-zA-Z0-9]/g, '_');
-    const accountRef = doc(db, 'artifacts', appId, 'public', 'data', 'accounts', safeEmailId);
-
-    try {
-      if (isLoginMode) {
-        const docSnap = await getDoc(accountRef);
-        if (docSnap.exists() && docSnap.data().password === authPassword) {
-          setCurrentUserEmail(authEmail); setIsAppUnlocked(true); setAuthPassword('');
-        } else { setAuthError('帳號或密碼錯誤'); }
-      } else {
-        if (authPassword !== authConfirmPassword) { setAuthError('兩次輸入的密碼不一致'); return; }
-        if (authPassword.length < 6) { setAuthError('密碼長度至少需要 6 個字元'); return; }
-        const docSnap = await getDoc(accountRef);
-        if (docSnap.exists()) { setAuthError('該信箱已被註冊，請直接登入'); return; }
-        await setDoc(accountRef, { email: authEmail, password: authPassword });
-        setAuthSuccessMsg('註冊成功！請使用新帳號重新登入。'); setIsLoginMode(true); setAuthPassword(''); setAuthConfirmPassword('');
-      }
-    } catch (err) { console.error(err); setAuthError('系統發生錯誤，請稍後再試 (請確認 Firebase 資料庫權限已開啟)'); }
-  };
-
-  const handleLogout = () => {
-    setIsAppUnlocked(false); setCurrentUserEmail(''); setAuthEmail(''); setCurrentTab('tasks'); setViewMode('week');
-  };
-
-  // --- Task Handlers ---
-  const toggleTask = async (task) => {
-    if (!realUser) return;
-    await setDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'tasks', task.id), { ...task, completed: !task.completed });
-  };
-  const handleDeleteTask = async (taskId) => {
-    if (!realUser) return;
-    await deleteDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'tasks', taskId));
-  };
-  const handleSaveTask = async (e) => {
-    e.preventDefault();
-    if (!newTaskTitle.trim() || !realUser) return;
-    const finalDate = modalType === 'weekly' ? getStartOfWeek(modalDate) : modalDate;
-    const taskData = { title: newTaskTitle.trim(), type: modalType, date: finalDate, completed: false, updatedAt: Date.now() };
-    if (editingTaskId) {
-      const currentStatus = tasks.find(t => t.id === editingTaskId)?.completed || false;
-      await setDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'tasks', editingTaskId), { ...taskData, completed: currentStatus }, { merge: true });
-    } else {
-      await setDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'tasks', Date.now().toString()), { ...taskData, createdAt: Date.now() });
-    }
-    setIsTaskModalOpen(false);
-  };
-  const openTaskModal = (type, date, task = null) => {
-    setModalType(task ? task.type : type); setModalDate(task ? task.date : date); setNewTaskTitle(task ? task.title : ''); setEditingTaskId(task ? task.id : null); setIsTaskModalOpen(true);
-  };
-
-  // --- Memo Handlers (備忘錄) ---
-  const handleEditMemo = (memo) => {
-    setMemoInput(memo.content);
-    setEditingMemoId(memo.id);
-    memoInputRef.current?.focus();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleSaveMemo = async () => {
-    if (!memoInput.trim() || !realUser) return;
-    const now = Date.now();
-    
-    if (editingMemoId) {
-      const existingMemo = memos.find(m => m.id === editingMemoId);
-      await setDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'memos', editingMemoId), {
-        content: memoInput.trim(),
-        createdAt: existingMemo?.createdAt || now
-      }, { merge: true });
-      setEditingMemoId(null);
-    } else {
-      await setDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'memos', now.toString()), {
-        content: memoInput.trim(),
-        createdAt: now
-      });
-    }
-    setMemoInput(''); 
-  };
-
-  const handleDeleteMemo = async (id) => {
-    await deleteDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'memos', id));
-  };
-
-  // --- Countdown Handlers ---
-  const handleSaveCountdown = async (e) => {
-    e.preventDefault();
-    if (!cdTitle.trim() || !realUser) return;
-    await setDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'countdowns', Date.now().toString()), { title: cdTitle.trim(), date: cdDate, createdAt: Date.now() });
-    setIsCountdownModalOpen(false); setCdTitle('');
-  };
-  const handleDeleteCountdown = async (id) => {
-    await deleteDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'countdowns', id));
-  };
-  const calculateDays = (targetDateStr) => {
-    const diffTime = new Date(targetDateStr) - new Date(todayStr);
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  };
-
-  // --- Book & Chapter Handlers ---
-  const handleSaveBook = async (e) => {
-    e.preventDefault();
-    if (!newBookTitle.trim() || !realUser) return;
-    await setDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'books', Date.now().toString()), { 
-      title: newBookTitle.trim(), createdAt: Date.now() 
-    });
-    setNewBookTitle(''); setIsBookModalOpen(false);
-  };
-  
-  const handleDeleteBook = async (id) => {
-    if(!window.confirm("確定刪除這本書及所有相關章節進度？")) return;
-    await deleteDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'books', id));
-    const relatedChapters = chapters.filter(c => c.bookId === id);
-    relatedChapters.forEach(async (c) => {
-      await deleteDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'chapters', c.id));
-    });
-  };
-
-  const handleSaveChapter = async (e) => {
-    e.preventDefault();
-    if (!chapterForm.title.trim() || !realUser || !targetBookIdForChapter) return;
-    const total = parseInt(chapterForm.totalPages) || 0;
-    const current = parseInt(chapterForm.currentPage) || 0;
-    const now = Date.now();
-    const data = {
-      bookId: targetBookIdForChapter, title: chapterForm.title.trim(), totalPages: total, currentPage: current, notes: chapterForm.notes || '', updatedAt: now
+    const formatDate = (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
     };
-    if (editingChapterId) {
-      await setDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'chapters', editingChapterId), data, { merge: true });
-    } else {
-      await setDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'chapters', now.toString()), { ...data, createdAt: now });
-    }
-    setIsChapterModalOpen(false);
-  };
+    const formatTimestamp = (timestamp) => {
+      if (!timestamp) return '';
+      const date = new Date(timestamp);
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${month}.${day} ${hours}:${minutes}`;
+    };
+    const getStartOfWeek = (dateStr) => {
+      const date = parseDateLocal(dateStr);
+      const day = date.getDay();
+      const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+      const start = new Date(date);
+      start.setDate(diff);
+      return formatDate(start);
+    };
+    const addDays = (dateStr, days) => {
+      const date = parseDateLocal(dateStr);
+      date.setDate(date.getDate() + days);
+      return formatDate(date);
+    };
+    const getDayName = (dateStr) => {
+      const days = ['日', '一', '二', '三', '四', '五', '六'];
+      return '週' + days[parseDateLocal(dateStr).getDay()];
+    };
+    const checkIsOverdue = (task, todayStr) => {
+      if (task.completed) return false;
+      if (task.type === 'daily') return task.date < todayStr;
+      if (task.type === 'weekly') return task.date < getStartOfWeek(todayStr);
+      return false;
+    };
 
-  const handleDeleteChapter = async (id) => {
-    await deleteDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'chapters', id));
-  };
+    // --- 左滑互動組件 ---
+    const SwipeableItem = ({ task, onToggle, onEdit, onDelete, isOverdue, isOpen, onOpen, onClose, hideCheck = false }) => {
+      const [translateX, setTranslateX] = useState(0);
+      const [isDragging, setIsDragging] = useState(false);
+      const startXRef = useRef(0);
+      const currentTranslateRef = useRef(0);
+      const maxTranslate = -100; const snapThreshold = -30;
 
-  const openChapterModal = (bookId, chapter = null) => {
-    setTargetBookIdForChapter(bookId);
-    if (chapter) {
-      setChapterForm({ title: chapter.title, totalPages: chapter.totalPages, currentPage: chapter.currentPage, notes: chapter.notes });
-      setEditingChapterId(chapter.id);
-    } else {
-      setChapterForm({ title: '', totalPages: '', currentPage: '', notes: '' });
-      setEditingChapterId(null);
-    }
-    setIsChapterModalOpen(true);
-  };
+      useEffect(() => {
+        if (isOpen) { setTranslateX(maxTranslate); currentTranslateRef.current = maxTranslate; } 
+        else { setTranslateX(0); currentTranslateRef.current = 0; }
+      }, [isOpen]);
 
-  // --- Profile Handlers ---
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_SIZE = 300; 
-        let width = img.width; let height = img.height;
-        if (width > height) { if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; } } 
-        else { if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; } }
-        canvas.width = width; canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        setEditProfileData({ ...editProfileData, avatar: canvas.toDataURL('image/jpeg', 0.8) });
+      const handleStart = (clientX) => { startXRef.current = clientX; setIsDragging(true); };
+      const handleMove = (clientX) => {
+        if (!isDragging) return;
+        const diff = clientX - startXRef.current;
+        let newTranslate = currentTranslateRef.current + diff;
+        if (newTranslate > 0) newTranslate = 0;
+        if (newTranslate < maxTranslate - 20) newTranslate = maxTranslate - 20; 
+        setTranslateX(newTranslate);
       };
-      img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
-  };
-  const handleSaveProfile = async () => {
-    if(!realUser) return;
-    await setDoc(doc(db, 'artifacts', appId, 'users', realUser.uid, 'profile', 'info'), editProfileData);
-    setProfile(editProfileData);
-    setIsEditingProfile(false);
-  };
+      const handleEnd = () => {
+        if (!isDragging) return;
+        setIsDragging(false);
+        if (translateX < snapThreshold || (isOpen && translateX < maxTranslate + 20)) onOpen();
+        else onClose();
+      };
 
-
-  // ================= 渲染區 =================
-
-  if (authLoading) return <div className={`min-h-screen ${theme.bg}`}></div>;
-
-  if (!isAppUnlocked) {
-    return (
-      <div className={`min-h-screen ${theme.bg} flex items-center justify-center p-4 font-sans`}>
-        <div className={`w-full max-w-sm ${theme.card} rounded-3xl shadow-sm p-8 border ${theme.border}`}>
-          <div className="text-center mb-10">
-            <h1 className={`text-2xl tracking-widest font-medium ${theme.textMain} mb-2`}>MINIMAL</h1>
-            <p className={`text-sm ${theme.textMuted} tracking-wide`}>簡約生活 · 任務管家</p>
+      return (
+        <div className="relative mb-2 rounded-xl overflow-hidden group h-full max-h-min border border-transparent hover:border-[#ebeae5] transition-colors">
+          <div className="absolute right-0 top-0 bottom-0 flex h-full rounded-xl overflow-hidden">
+            <button onClick={(e) => { e.stopPropagation(); onClose(); onEdit(task); }} className="w-[50px] bg-[#d3dbd8] hover:bg-[#c2cbc8] text-[#5c5d5a] flex flex-col justify-center items-center">
+              <Pencil size={16} strokeWidth={1.5} />
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); onClose(); onDelete(task.id); }} className="w-[50px] bg-[#e3d1cf] hover:bg-[#d4bebb] text-[#8c6b66] flex flex-col justify-center items-center">
+              <Trash2 size={16} strokeWidth={1.5} />
+            </button>
           </div>
-          {authError && <div className="mb-6 p-3 bg-red-50 text-[#c29b95] text-xs rounded-xl text-center tracking-wide leading-relaxed">{authError}</div>}
-          {authSuccessMsg && <div className="mb-6 p-3 bg-[#eef5f1] text-[#6a7c75] text-xs rounded-xl text-center tracking-wide">{authSuccessMsg}</div>}
-          <form onSubmit={handleAuthSubmit} className="space-y-5">
-            <div><input type="email" required placeholder="電子信箱" value={authEmail} onChange={e => setAuthEmail(e.target.value)} className={`w-full px-4 py-3 bg-[#fbfaf9] border border-[#ebeae5] rounded-xl focus:outline-none focus:border-[#9ba8a2] transition-colors text-sm ${theme.textMain} placeholder:text-[#cccbcb]`} /></div>
-            <div><input type="password" required placeholder="密碼 (至少6碼)" value={authPassword} onChange={e => setAuthPassword(e.target.value)} className={`w-full px-4 py-3 bg-[#fbfaf9] border border-[#ebeae5] rounded-xl focus:outline-none focus:border-[#9ba8a2] transition-colors text-sm ${theme.textMain} placeholder:text-[#cccbcb]`} /></div>
-            {!isLoginMode && (<div><input type="password" required placeholder="再次輸入密碼確認" value={authConfirmPassword} onChange={e => setAuthConfirmPassword(e.target.value)} className={`w-full px-4 py-3 bg-[#fbfaf9] border border-[#ebeae5] rounded-xl focus:outline-none focus:border-[#9ba8a2] transition-colors text-sm ${theme.textMain} placeholder:text-[#cccbcb]`} /></div>)}
-            <button type="submit" className={`w-full py-3 mt-4 ${theme.primary} text-white rounded-xl text-sm font-medium tracking-wider transition-colors ${theme.primaryHover}`}>{isLoginMode ? '登 入' : '註 冊'}</button>
-          </form>
-          <div className="mt-8 text-center">
-            <button onClick={() => { setIsLoginMode(!isLoginMode); setAuthError(''); setAuthSuccessMsg(''); setAuthPassword(''); setAuthConfirmPassword(''); }} className={`text-xs ${theme.textMuted} hover:${theme.primaryText} transition-colors tracking-wide`}>{isLoginMode ? '還沒有帳號？點此註冊' : '已有帳號？返回登入'}</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // --- 視圖: 週曆 ---
-  const renderWeekView = () => {
-    const weeklyTasks = tasks.filter(t => t.type === 'weekly' && t.date === currentWeekStart);
-    return (
-      <div className="space-y-8 animate-in fade-in duration-300">
-        
-        {/* PWA 安裝提示 */}
-        {showPWAPrompt && (
-          <div className={`bg-white border ${theme.border} text-[#6a7c75] p-4 rounded-2xl mb-2 text-sm flex items-start justify-between shadow-sm`}>
-            <div>
-              <strong className="block mb-1.5 font-medium tracking-wider text-[#5c5d5a] flex items-center gap-1.5">
-                <Download size={16} className={theme.primaryText} /> 加入主畫面，享受 App 體驗！
-              </strong>
-              <div className="text-[12px] leading-relaxed text-[#a3a6a1]">
-                <span className="font-medium text-[#85928c]">iOS Safari：</span>點擊底部「分享」圖示 ➔ 加入主畫面<br/>
-                <span className="font-medium text-[#85928c]">Android Chrome：</span>點擊右上角「⋮」➔ 加到主畫面
+          <div
+            className={`relative z-10 flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-transform h-full ${task.completed ? 'bg-[#fbfaf9] opacity-70' : theme.card}`}
+            style={{ transform: `translateX(${translateX}px)`, transition: isDragging ? 'none' : 'transform 0.2s ease-out' }}
+            onTouchStart={e => handleStart(e.touches[0].clientX)} onTouchMove={e => handleMove(e.touches[0].clientX)} onTouchEnd={handleEnd}
+            onMouseDown={e => handleStart(e.clientX)} onMouseMove={e => handleMove(e.clientX)} onMouseUp={handleEnd} onMouseLeave={() => { if(isDragging) handleEnd() }}
+          >
+            {!hideCheck && (
+              <div className="mt-0.5 flex-shrink-0" onClick={(e) => { e.stopPropagation(); onToggle(task); }}>
+                {task.completed ? <CheckCircle2 size={18} strokeWidth={1.5} className="text-[#a3a6a1]" /> : <Circle size={18} strokeWidth={1.5} className="text-[#d1d5db]" />}
               </div>
+            )}
+            <div className="flex-1 min-w-0 flex flex-col select-none pt-0.5">
+              {task.type === 'weekly' && task.showWeeklyBadge && (
+                <span className={`text-[9px] bg-[#f0f2f1] ${theme.primaryText} px-1.5 py-0.5 rounded border ${theme.border} tracking-widest mb-1.5 w-max font-medium`}>WEEKLY GOAL</span>
+              )}
+              <div className="flex items-center justify-between">
+                <span className={`text-[15px] leading-relaxed break-words tracking-wide ${task.completed ? 'line-through text-[#a3a6a1]' : theme.textMain}`}>{task.title}</span>
+                {task.isChapter && task.updatedAt && <span className={`text-[10px] ${theme.textMuted} tracking-wider ml-2 flex-shrink-0`}>{formatTimestamp(task.updatedAt)}</span>}
+              </div>
+              {isOverdue && !task.completed && <span className={`text-[11px] ${theme.accent} font-medium mt-1 tracking-wider`}>已逾期</span>}
+              {task.isChapter && (
+                <div className="mt-2">
+                   <div className="flex justify-between items-end mb-1">
+                     <span className={`text-[10px] tracking-wider ${theme.textMuted}`}>{task.currentPage} / {task.totalPages} 頁</span>
+                     <span className={`text-[11px] font-medium tracking-widest ${task.percentage === 100 ? theme.primaryText : theme.textMain}`}>{task.percentage}%</span>
+                   </div>
+                   <div className="h-1.5 w-full bg-[#ebeae5] rounded-full overflow-hidden">
+                     <div className={`h-full transition-all duration-500 ease-out rounded-full ${task.percentage === 100 ? 'bg-[#9ba8a2]' : 'bg-[#6a7c75]'}`} style={{ width: `${task.percentage}%` }}/>
+                   </div>
+                   {task.notes && <p className={`mt-2 text-[12px] ${theme.textMuted} leading-relaxed bg-[#fbfaf9] p-2 rounded-lg border ${theme.border}`}>{task.notes}</p>}
+                </div>
+              )}
             </div>
-            <button onClick={() => setShowPWAPrompt(false)} className={`p-1.5 hover:bg-gray-50 rounded-full transition-colors text-[#a3a6a1] hover:text-[#5c5d5a]`}><X size={16}/></button>
-          </div>
-        )}
-
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setCurrentDateStr(addDays(currentDateStr, -7))} className={`p-2 ${theme.textMuted} hover:${theme.textMain} transition-colors`}><ChevronLeft size={20} strokeWidth={1.5} /></button>
-            <span className={`font-medium tracking-wider ${theme.textMain} text-sm min-w-[200px] text-center`}>
-              {currentWeekStart.replace(/-/g, '.')} — {addDays(currentWeekStart, 6).replace(/-/g, '.')}
-            </span>
-            <button onClick={() => setCurrentDateStr(addDays(currentDateStr, 7))} className={`p-2 ${theme.textMuted} hover:${theme.textMain} transition-colors`}><ChevronRight size={20} strokeWidth={1.5} /></button>
-            <button onClick={() => setCurrentDateStr(todayStr)} className={`text-xs px-3 py-1.5 rounded-full border ${theme.border} ${theme.textMuted} hover:bg-gray-50 transition-colors hidden md:block`}>回到本週</button>
           </div>
         </div>
+      );
+    };
 
-        <div className="mb-10">
-          <div className="flex items-center justify-between mb-4 px-2">
-            <h2 className={`text-sm font-medium tracking-widest ${theme.primaryText}`}>WEEKLY GOALS</h2>
-            <button onClick={() => openTaskModal('weekly', currentWeekStart)} className={`text-xs ${theme.textMuted} hover:${theme.primaryText} flex items-center gap-1`}><Plus size={14} /> 新增</button>
+    const SwipeableMemoItem = ({ memo, onEdit, onDelete, isOpen, onOpen, onClose }) => {
+      const [translateX, setTranslateX] = useState(0);
+      const [isDragging, setIsDragging] = useState(false);
+      const startXRef = useRef(0);
+      const currentTranslateRef = useRef(0);
+      const maxTranslate = -100; const snapThreshold = -30;
+
+      useEffect(() => {
+        if (isOpen) { setTranslateX(maxTranslate); currentTranslateRef.current = maxTranslate; } 
+        else { setTranslateX(0); currentTranslateRef.current = 0; }
+      }, [isOpen]);
+
+      const handleStart = (clientX) => { startXRef.current = clientX; setIsDragging(true); };
+      const handleMove = (clientX) => {
+        if (!isDragging) return;
+        const diff = clientX - startXRef.current;
+        let newTranslate = currentTranslateRef.current + diff;
+        if (newTranslate > 0) newTranslate = 0;
+        if (newTranslate < maxTranslate - 20) newTranslate = maxTranslate - 20; 
+        setTranslateX(newTranslate);
+      };
+      const handleEnd = () => {
+        if (!isDragging) return;
+        setIsDragging(false);
+        if (translateX < snapThreshold || (isOpen && translateX < maxTranslate + 20)) onOpen();
+        else onClose();
+      };
+
+      return (
+        <div className="relative group overflow-hidden bg-white">
+          <div className="absolute right-0 top-0 bottom-0 flex h-full">
+            <button onClick={(e) => { e.stopPropagation(); onClose(); onEdit(memo); }} className="w-[50px] bg-[#d3dbd8] hover:bg-[#c2cbc8] text-[#5c5d5a] flex flex-col justify-center items-center"><Pencil size={16} strokeWidth={1.5} /></button>
+            <button onClick={(e) => { e.stopPropagation(); onClose(); onDelete(memo.id); }} className="w-[50px] bg-[#e3d1cf] hover:bg-[#d4bebb] text-[#8c6b66] flex flex-col justify-center items-center"><Trash2 size={16} strokeWidth={1.5} /></button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            {weeklyTasks.length > 0 ? weeklyTasks.map(task => (
-              <SwipeableItem key={task.id} task={task} isOverdue={checkIsOverdue(task, todayStr)} onToggle={toggleTask} onEdit={(t)=>openTaskModal('weekly', t.date, t)} onDelete={handleDeleteTask} isOpen={openSwipeId === task.id} onOpen={() => setOpenSwipeId(task.id)} onClose={() => setOpenSwipeId(null)} />
-            )) : <div className={`col-span-full py-4 text-xs tracking-wider ${theme.textMuted} opacity-60 px-2`}>尚未設定本週目標</div>}
+          <div
+            className="relative z-10 flex flex-col py-4 px-2 bg-white transition-transform h-full cursor-pointer"
+            style={{ transform: `translateX(${translateX}px)`, transition: isDragging ? 'none' : 'transform 0.2s ease-out' }}
+            onTouchStart={e => handleStart(e.touches[0].clientX)} onTouchMove={e => handleMove(e.touches[0].clientX)} onTouchEnd={handleEnd}
+            onMouseDown={e => handleStart(e.clientX)} onMouseMove={e => handleMove(e.clientX)} onMouseUp={handleEnd} onMouseLeave={() => { if(isDragging) handleEnd() }}
+          >
+            <p className={`text-[15px] leading-loose tracking-wide ${theme.textMain} whitespace-pre-wrap`}>{memo.content}</p>
+            <div className="flex items-center justify-end mt-3">
+              <span className={`text-[11px] ${theme.textMuted} tracking-widest`}>{formatTimestamp(memo.createdAt)}</span>
+            </div>
           </div>
         </div>
+      );
+    };
 
-        <div className="grid grid-cols-1 xl:grid-cols-7 gap-4 xl:gap-3">
-          {weekDays.map(dateStr => {
-            const dailyTasks = tasks.filter(t => t.type === 'daily' && t.date === dateStr);
-            const isToday = dateStr === todayStr; 
-            return (
-              <div key={dateStr} className={`flex flex-col min-h-[150px] xl:min-h-[300px] p-1`}>
-                <div className={`flex items-baseline gap-2 mb-3 px-2 pb-2 border-b ${isToday ? 'border-[#9ba8a2]' : theme.border}`}>
-                  <span className={`text-[15px] font-medium ${isToday ? theme.primaryText : theme.textMain}`}>{getDayName(dateStr)}</span>
-                  <span className={`text-[11px] tracking-wider ${theme.textMuted}`}>{dateStr.substring(5).replace('-', '.')}</span>
-                  {isToday && <span className={`ml-auto text-[10px] ${theme.primary} text-white px-1.5 py-0.5 rounded-sm tracking-widest`}>TODAY</span>}
+    // --- 主程式 ---
+    function App() {
+      const [realUser, setRealUser] = useState(null);
+      const [authLoading, setAuthLoading] = useState(true);
+      const [isAppUnlocked, setIsAppUnlocked] = useState(false);
+      const [currentUserEmail, setCurrentUserEmail] = useState('');
+      const [currentTab, setCurrentTab] = useState('tasks'); 
+      const [viewMode, setViewMode] = useState('week'); 
+      const [showPWAPrompt, setShowPWAPrompt] = useState(true);
+
+      const [isLoginMode, setIsLoginMode] = useState(true);
+      const [authEmail, setAuthEmail] = useState('');
+      const [authPassword, setAuthPassword] = useState('');
+      const [authConfirmPassword, setAuthConfirmPassword] = useState('');
+      const [authError, setAuthError] = useState('');
+      const [authSuccessMsg, setAuthSuccessMsg] = useState('');
+
+      const [tasks, setTasks] = useState([]);
+      const [currentDateStr, setCurrentDateStr] = useState(formatDate(new Date())); 
+      const todayStr = useMemo(() => formatDate(new Date()), []);
+      const [openSwipeId, setOpenSwipeId] = useState(null);
+      
+      const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+      const [modalType, setModalType] = useState('daily');
+      const [modalDate, setModalDate] = useState(currentDateStr);
+      const [newTaskTitle, setNewTaskTitle] = useState('');
+      const [editingTaskId, setEditingTaskId] = useState(null);
+
+      const [countdowns, setCountdowns] = useState([]);
+      const [isCountdownModalOpen, setIsCountdownModalOpen] = useState(false);
+      const [cdTitle, setCdTitle] = useState('');
+      const [cdDate, setCdDate] = useState(todayStr);
+
+      const [books, setBooks] = useState([]);
+      const [chapters, setChapters] = useState([]);
+      const [expandedBookId, setExpandedBookId] = useState(null);
+      const [isBookModalOpen, setIsBookModalOpen] = useState(false);
+      const [newBookTitle, setNewBookTitle] = useState('');
+      const [isChapterModalOpen, setIsChapterModalOpen] = useState(false);
+      const [editingChapterId, setEditingChapterId] = useState(null);
+      const [targetBookIdForChapter, setTargetBookIdForChapter] = useState(null);
+      const [chapterForm, setChapterForm] = useState({ title: '', totalPages: '', currentPage: '', notes: '' });
+
+      const [memos, setMemos] = useState([]);
+      const [memoInput, setMemoInput] = useState('');
+      const [editingMemoId, setEditingMemoId] = useState(null);
+      const memoInputRef = useRef(null);
+
+      const [profile, setProfile] = useState({ nickname: '', bio: '', avatar: '' });
+      const [isEditingProfile, setIsEditingProfile] = useState(false);
+      const [editProfileData, setEditProfileData] = useState({ nickname: '', bio: '', avatar: '' });
+      const fileInputRef = useRef(null);
+
+      const currentWeekStart = useMemo(() => getStartOfWeek(currentDateStr), [currentDateStr]);
+      const weekDays = useMemo(() => Array.from({ length: 7 }).map((_, i) => addDays(currentWeekStart, i)), [currentWeekStart]);
+
+      useEffect(() => {
+        signInAnonymously(auth).catch(err => console.error(err));
+        const unsubscribe = onAuthStateChanged(auth, (u) => { setRealUser(u); setAuthLoading(false); });
+        return () => unsubscribe();
+      }, []);
+
+      useEffect(() => {
+        if (!realUser || !isAppUnlocked) return;
+        const unsubTasks = onSnapshot(collection(db, 'artifacts', appIdStr, 'users', realUser.uid, 'tasks'), s => setTasks(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubCd = onSnapshot(collection(db, 'artifacts', appIdStr, 'users', realUser.uid, 'countdowns'), s => setCountdowns(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubBooks = onSnapshot(collection(db, 'artifacts', appIdStr, 'users', realUser.uid, 'books'), s => setBooks(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubChapters = onSnapshot(collection(db, 'artifacts', appIdStr, 'users', realUser.uid, 'chapters'), s => setChapters(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubMemos = onSnapshot(collection(db, 'artifacts', appIdStr, 'users', realUser.uid, 'memos'), s => setMemos(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+        getDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'profile', 'info')).then(pSnap => {
+          if (pSnap.exists()) {
+            const data = pSnap.data();
+            setProfile({ ...data, avatar: data.avatar || '' }); setEditProfileData({ ...data, avatar: data.avatar || '' });
+          } else {
+            const defaultProfile = { nickname: currentUserEmail.split('@')[0] || 'User', bio: '生活需要一點簡約', avatar: '' };
+            setProfile(defaultProfile); setEditProfileData(defaultProfile);
+          }
+        });
+        return () => { unsubTasks(); unsubCd(); unsubBooks(); unsubChapters(); unsubMemos(); };
+      }, [realUser, isAppUnlocked, currentUserEmail]);
+
+      const handleAuthSubmit = async (e) => {
+        e.preventDefault(); if (!realUser) return;
+        setAuthError(''); setAuthSuccessMsg('');
+        const safeEmailId = authEmail.replace(/[^a-zA-Z0-9]/g, '_');
+        const accountRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', safeEmailId);
+        try {
+          if (isLoginMode) {
+            const docSnap = await getDoc(accountRef);
+            if (docSnap.exists() && docSnap.data().password === authPassword) {
+              setCurrentUserEmail(authEmail); setIsAppUnlocked(true); setAuthPassword('');
+            } else { setAuthError('帳號或密碼錯誤'); }
+          } else {
+            if (authPassword !== authConfirmPassword) { setAuthError('兩次密碼不一致'); return; }
+            if (authPassword.length < 6) { setAuthError('密碼需至少6碼'); return; }
+            const docSnap = await getDoc(accountRef);
+            if (docSnap.exists()) { setAuthError('此信箱已被註冊'); return; }
+            await setDoc(accountRef, { email: authEmail, password: authPassword });
+            setAuthSuccessMsg('註冊成功！請重新登入。'); setIsLoginMode(true); setAuthPassword(''); setAuthConfirmPassword('');
+          }
+        } catch (err) { console.error(err); setAuthError('系統錯誤，請確認Firebase規則是否正確'); }
+      };
+
+      const handleLogout = () => { setIsAppUnlocked(false); setCurrentUserEmail(''); setAuthEmail(''); setCurrentTab('tasks'); setViewMode('week'); };
+
+      // --- Task ---
+      const toggleTask = async (task) => await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'tasks', task.id), { ...task, completed: !task.completed });
+      const handleDeleteTask = async (taskId) => await deleteDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'tasks', taskId));
+      const handleSaveTask = async (e) => {
+        e.preventDefault(); if (!newTaskTitle.trim() || !realUser) return;
+        const finalDate = modalType === 'weekly' ? getStartOfWeek(modalDate) : modalDate;
+        const taskData = { title: newTaskTitle.trim(), type: modalType, date: finalDate, completed: false, updatedAt: Date.now() };
+        if (editingTaskId) {
+          const currentStatus = tasks.find(t => t.id === editingTaskId)?.completed || false;
+          await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'tasks', editingTaskId), { ...taskData, completed: currentStatus }, { merge: true });
+        } else {
+          await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'tasks', Date.now().toString()), { ...taskData, createdAt: Date.now() });
+        }
+        setIsTaskModalOpen(false);
+      };
+      const openTaskModal = (type, date, task = null) => { setModalType(task ? task.type : type); setModalDate(task ? task.date : date); setNewTaskTitle(task ? task.title : ''); setEditingTaskId(task ? task.id : null); setIsTaskModalOpen(true); };
+
+      // --- Memo ---
+      const handleEditMemo = (memo) => { setMemoInput(memo.content); setEditingMemoId(memo.id); memoInputRef.current?.focus(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+      const handleSaveMemo = async () => {
+        if (!memoInput.trim() || !realUser) return;
+        const now = Date.now();
+        if (editingMemoId) {
+          const existingMemo = memos.find(m => m.id === editingMemoId);
+          await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'memos', editingMemoId), { content: memoInput.trim(), createdAt: existingMemo?.createdAt || now }, { merge: true });
+          setEditingMemoId(null);
+        } else {
+          await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'memos', now.toString()), { content: memoInput.trim(), createdAt: now });
+        }
+        setMemoInput(''); 
+      };
+      const handleDeleteMemo = async (id) => await deleteDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'memos', id));
+
+      // --- Countdown ---
+      const handleSaveCountdown = async (e) => {
+        e.preventDefault(); if (!cdTitle.trim() || !realUser) return;
+        await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'countdowns', Date.now().toString()), { title: cdTitle.trim(), date: cdDate, createdAt: Date.now() });
+        setIsCountdownModalOpen(false); setCdTitle('');
+      };
+      const handleDeleteCountdown = async (id) => await deleteDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'countdowns', id));
+      const calculateDays = (targetDateStr) => Math.ceil((new Date(targetDateStr) - new Date(todayStr)) / (1000 * 60 * 60 * 24));
+
+      // --- Books ---
+      const handleSaveBook = async (e) => {
+        e.preventDefault(); if (!newBookTitle.trim() || !realUser) return;
+        await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'books', Date.now().toString()), { title: newBookTitle.trim(), createdAt: Date.now() });
+        setNewBookTitle(''); setIsBookModalOpen(false);
+      };
+      const handleDeleteBook = async (id) => {
+        if(!window.confirm("確定刪除這本書及所有相關章節進度？")) return;
+        await deleteDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'books', id));
+        chapters.filter(c => c.bookId === id).forEach(async (c) => await deleteDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'chapters', c.id)));
+      };
+      const handleSaveChapter = async (e) => {
+        e.preventDefault(); if (!chapterForm.title.trim() || !realUser || !targetBookIdForChapter) return;
+        const now = Date.now();
+        const data = { bookId: targetBookIdForChapter, title: chapterForm.title.trim(), totalPages: parseInt(chapterForm.totalPages) || 0, currentPage: parseInt(chapterForm.currentPage) || 0, notes: chapterForm.notes || '', updatedAt: now };
+        if (editingChapterId) await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'chapters', editingChapterId), data, { merge: true });
+        else await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'chapters', now.toString()), { ...data, createdAt: now });
+        setIsChapterModalOpen(false);
+      };
+      const handleDeleteChapter = async (id) => await deleteDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'chapters', id));
+      const openChapterModal = (bookId, chapter = null) => {
+        setTargetBookIdForChapter(bookId);
+        if (chapter) { setChapterForm({ title: chapter.title, totalPages: chapter.totalPages, currentPage: chapter.currentPage, notes: chapter.notes }); setEditingChapterId(chapter.id); } 
+        else { setChapterForm({ title: '', totalPages: '', currentPage: '', notes: '' }); setEditingChapterId(null); }
+        setIsChapterModalOpen(true);
+      };
+
+      // --- Profile ---
+      const handleImageUpload = (e) => {
+        const file = e.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let w = img.width; let h = img.height;
+            if (w > h) { if (w > 300) { h *= 300 / w; w = 300; } } else { if (h > 300) { w *= 300 / h; h = 300; } }
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            setEditProfileData({ ...editProfileData, avatar: canvas.toDataURL('image/jpeg', 0.8) });
+          };
+          img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+      };
+      const handleSaveProfile = async () => { if(!realUser) return; await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'profile', 'info'), editProfileData); setProfile(editProfileData); setIsEditingProfile(false); };
+
+
+      // --- 渲染 ---
+      if (authLoading) return <div className={`min-h-screen ${theme.bg}`}></div>;
+      
+      if (!isAppUnlocked) {
+        return (
+          <div className={`min-h-screen ${theme.bg} flex items-center justify-center p-4 font-sans`}>
+            <div className={`w-full max-w-sm ${theme.card} rounded-3xl shadow-sm p-8 border ${theme.border}`}>
+              <div className="text-center mb-10"><h1 className={`text-2xl tracking-widest font-medium ${theme.textMain} mb-2`}>MINIMAL</h1><p className={`text-sm ${theme.textMuted} tracking-wide`}>簡約生活 · 任務管家</p></div>
+              {authError && <div className="mb-6 p-3 bg-red-50 text-[#c29b95] text-xs rounded-xl text-center tracking-wide leading-relaxed">{authError}</div>}
+              {authSuccessMsg && <div className="mb-6 p-3 bg-[#eef5f1] text-[#6a7c75] text-xs rounded-xl text-center tracking-wide">{authSuccessMsg}</div>}
+              <form onSubmit={handleAuthSubmit} className="space-y-5">
+                <div><input type="email" required placeholder="電子信箱" value={authEmail} onChange={e => setAuthEmail(e.target.value)} className={`w-full px-4 py-3 bg-[#fbfaf9] border border-[#ebeae5] rounded-xl focus:outline-none focus:border-[#9ba8a2] transition-colors text-sm ${theme.textMain} placeholder:text-[#cccbcb]`} /></div>
+                <div><input type="password" required placeholder="密碼 (至少6碼)" value={authPassword} onChange={e => setAuthPassword(e.target.value)} className={`w-full px-4 py-3 bg-[#fbfaf9] border border-[#ebeae5] rounded-xl focus:outline-none focus:border-[#9ba8a2] transition-colors text-sm ${theme.textMain} placeholder:text-[#cccbcb]`} /></div>
+                {!isLoginMode && (<div><input type="password" required placeholder="再次輸入密碼確認" value={authConfirmPassword} onChange={e => setAuthConfirmPassword(e.target.value)} className={`w-full px-4 py-3 bg-[#fbfaf9] border border-[#ebeae5] rounded-xl focus:outline-none focus:border-[#9ba8a2] transition-colors text-sm ${theme.textMain} placeholder:text-[#cccbcb]`} /></div>)}
+                <button type="submit" className={`w-full py-3 mt-4 ${theme.primary} text-white rounded-xl text-sm font-medium tracking-wider transition-colors ${theme.primaryHover}`}>{isLoginMode ? '登 入' : '註 冊'}</button>
+              </form>
+              <div className="mt-8 text-center"><button onClick={() => { setIsLoginMode(!isLoginMode); setAuthError(''); setAuthSuccessMsg(''); setAuthPassword(''); setAuthConfirmPassword(''); }} className={`text-xs ${theme.textMuted} hover:${theme.primaryText} transition-colors tracking-wide`}>{isLoginMode ? '還沒有帳號？點此註冊' : '已有帳號？返回登入'}</button></div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className={`min-h-screen ${theme.bg} font-sans flex flex-col pb-24 md:pb-0`} onClick={() => setOpenSwipeId(null)}>
+          <header className={`sticky top-0 z-30 bg-[#f7f6f2]/90 backdrop-blur-md px-6 py-5 flex items-center justify-between`}>
+            <div className={`text-lg font-medium tracking-widest ${theme.textMain} flex items-center gap-2`}>MINIMAL<span className="text-[10px] text-[#a3a6a1]">CALENDAR</span></div>
+            <div className={`w-10 h-10 rounded-full ${theme.card} border ${theme.border} flex items-center justify-center overflow-hidden shadow-sm cursor-pointer hover:border-[#9ba8a2] transition-colors`} onClick={() => setCurrentTab('profile')}>
+              {profile.avatar ? <img src={profile.avatar} alt="avatar" className="w-full h-full object-cover" /> : <User size={18} className={theme.textMuted} strokeWidth={1.5} />}
+            </div>
+          </header>
+
+          <main className="flex-1 p-6 overflow-x-hidden">
+            {currentTab === 'tasks' && (
+              <div className={`flex items-center justify-between mb-8 border-b ${theme.border} px-2`}>
+                <div className="flex items-center gap-6">
+                  <button onClick={() => setViewMode('week')} className={`text-[13px] tracking-widest pb-3 -mb-[1px] transition-colors ${viewMode === 'week' ? `text-[#6a7c75] border-b-2 border-[#6a7c75] font-medium` : `text-[#a3a6a1] hover:${theme.textMain}`}`}>WEEK (週曆)</button>
+                  <button onClick={() => setViewMode('all')} className={`text-[13px] tracking-widest pb-3 -mb-[1px] transition-colors ${viewMode === 'all' ? `text-[#6a7c75] border-b-2 border-[#6a7c75] font-medium` : `text-[#a3a6a1] hover:${theme.textMain}`}`}>ALL (全部)</button>
                 </div>
-                <div className="flex-1 flex flex-col gap-1">
-                  {dailyTasks.map(task => <SwipeableItem key={task.id} task={task} isOverdue={checkIsOverdue(task, todayStr)} onToggle={toggleTask} onEdit={(t)=>openTaskModal('daily', t.date, t)} onDelete={handleDeleteTask} isOpen={openSwipeId === task.id} onOpen={() => setOpenSwipeId(task.id)} onClose={() => setOpenSwipeId(null)} />)}
-                  <button onClick={() => openTaskModal('daily', dateStr)} className={`w-full text-left py-2 px-3 mt-1 text-[13px] ${theme.textMuted} hover:${theme.primaryText} transition-colors rounded-xl hover:bg-white flex items-center gap-1.5`}><Plus size={14} /> 添加事項...</button>
-                </div>
+                {viewMode === 'all' && <button onClick={() => openTaskModal('daily', todayStr)} className={`text-[12px] flex items-center gap-1.5 ${theme.primaryText} hover:text-[#5c5d5a] pb-3 -mb-[1px] transition-colors tracking-wide`}><Plus size={14} strokeWidth={2}/> 新增任務</button>}
               </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
+            )}
 
-  // --- 視圖: 全部任務 ---
-  const renderAllView = () => {
-    const grouped = tasks.reduce((acc, task) => {
-      const key = task.date;
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(task);
-      return acc;
-    }, {});
-    const sortedDates = Object.keys(grouped).sort();
-
-    return (
-      <div className="max-w-3xl mx-auto space-y-10 animate-in fade-in duration-300">
-        {sortedDates.length === 0 ? (
-          <div className={`py-16 text-center text-sm tracking-wider ${theme.textMuted}`}>目前沒有任何任務紀錄</div>
-        ) : (
-          sortedDates.map(dateKey => {
-            const dateTasks = grouped[dateKey];
-            const isToday = dateKey === todayStr;
-            return (
-              <div key={dateKey} className="space-y-4">
-                <div className={`flex items-baseline gap-3 border-b ${isToday ? 'border-[#9ba8a2]' : theme.border} pb-2`}>
-                  <h3 className={`text-base font-medium tracking-widest ${isToday ? theme.primaryText : theme.textMain}`}>
-                    {dateKey.replace(/-/g, '.')}
-                  </h3>
-                  <span className={`text-xs ${theme.textMuted} tracking-wider`}>{getDayName(dateKey)}</span>
-                  {isToday && <span className={`ml-auto text-[10px] ${theme.primary} text-white px-1.5 py-0.5 rounded-sm tracking-widest`}>TODAY</span>}
+            {currentTab === 'tasks' && viewMode === 'week' && (
+              <div className="space-y-8 animate-in fade-in duration-300">
+                {showPWAPrompt && (
+                  <div className={`bg-white border ${theme.border} text-[#6a7c75] p-4 rounded-2xl mb-2 text-sm flex items-start justify-between shadow-sm`}>
+                    <div>
+                      <strong className="block mb-1.5 font-medium tracking-wider text-[#5c5d5a] flex items-center gap-1.5"><Download size={16} className={theme.primaryText} /> 加入桌面 App</strong>
+                      <div className="text-[12px] leading-relaxed text-[#a3a6a1]"><span className="font-medium text-[#85928c]">iOS Safari：</span>點底部「分享」➔ 加入主畫面<br/><span className="font-medium text-[#85928c]">Android：</span>點右上「⋮」➔ 加到主畫面</div>
+                    </div>
+                    <button onClick={() => setShowPWAPrompt(false)} className={`p-1.5 hover:bg-gray-50 rounded-full text-[#a3a6a1] hover:text-[#5c5d5a]`}><X size={16}/></button>
+                  </div>
+                )}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <button onClick={() => setCurrentDateStr(addDays(currentDateStr, -7))} className={`p-2 ${theme.textMuted} hover:${theme.textMain}`}><ChevronLeft size={20} strokeWidth={1.5} /></button>
+                    <span className={`font-medium tracking-wider ${theme.textMain} text-sm min-w-[200px] text-center`}>{currentWeekStart.replace(/-/g, '.')} — {addDays(currentWeekStart, 6).replace(/-/g, '.')}</span>
+                    <button onClick={() => setCurrentDateStr(addDays(currentDateStr, 7))} className={`p-2 ${theme.textMuted} hover:${theme.textMain}`}><ChevronRight size={20} strokeWidth={1.5} /></button>
+                    <button onClick={() => setCurrentDateStr(todayStr)} className={`text-xs px-3 py-1.5 rounded-full border ${theme.border} ${theme.textMuted} hidden md:block`}>回到本週</button>
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {dateTasks.map(task => (
-                    <div key={task.id} className="relative">
-                       <SwipeableItem task={{...task, showWeeklyBadge: true}} isOverdue={checkIsOverdue(task, todayStr)} onToggle={toggleTask} onEdit={(t)=>openTaskModal(t.type, t.date, t)} onDelete={handleDeleteTask} isOpen={openSwipeId === task.id} onOpen={() => setOpenSwipeId(task.id)} onClose={() => setOpenSwipeId(null)} />
+                <div className="mb-10">
+                  <div className="flex items-center justify-between mb-4 px-2"><h2 className={`text-sm font-medium tracking-widest ${theme.primaryText}`}>WEEKLY GOALS</h2><button onClick={() => openTaskModal('weekly', currentWeekStart)} className={`text-xs ${theme.textMuted} hover:${theme.primaryText} flex items-center gap-1`}><Plus size={14} /> 新增</button></div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {tasks.filter(t => t.type === 'weekly' && t.date === currentWeekStart).map(task => <SwipeableItem key={task.id} task={task} isOverdue={checkIsOverdue(task, todayStr)} onToggle={toggleTask} onEdit={(t)=>openTaskModal('weekly', t.date, t)} onDelete={handleDeleteTask} isOpen={openSwipeId === task.id} onOpen={() => setOpenSwipeId(task.id)} onClose={() => setOpenSwipeId(null)} />)}
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 xl:grid-cols-7 gap-4 xl:gap-3">
+                  {weekDays.map(dateStr => (
+                    <div key={dateStr} className={`flex flex-col min-h-[150px] xl:min-h-[300px] p-1`}>
+                      <div className={`flex items-baseline gap-2 mb-3 px-2 pb-2 border-b ${dateStr === todayStr ? 'border-[#9ba8a2]' : theme.border}`}>
+                        <span className={`text-[15px] font-medium ${dateStr === todayStr ? theme.primaryText : theme.textMain}`}>{getDayName(dateStr)}</span>
+                        <span className={`text-[11px] tracking-wider ${theme.textMuted}`}>{dateStr.substring(5).replace('-', '.')}</span>
+                        {dateStr === todayStr && <span className={`ml-auto text-[10px] ${theme.primary} text-white px-1.5 py-0.5 rounded-sm tracking-widest`}>TODAY</span>}
+                      </div>
+                      <div className="flex-1 flex flex-col gap-1">
+                        {tasks.filter(t => t.type === 'daily' && t.date === dateStr).map(task => <SwipeableItem key={task.id} task={task} isOverdue={checkIsOverdue(task, todayStr)} onToggle={toggleTask} onEdit={(t)=>openTaskModal('daily', t.date, t)} onDelete={handleDeleteTask} isOpen={openSwipeId === task.id} onOpen={() => setOpenSwipeId(task.id)} onClose={() => setOpenSwipeId(null)} />)}
+                        <button onClick={() => openTaskModal('daily', dateStr)} className={`w-full text-left py-2 px-3 mt-1 text-[13px] ${theme.textMuted} hover:${theme.primaryText} rounded-xl hover:bg-white flex items-center gap-1.5`}><Plus size={14} /> 添加事項...</button>
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
-            );
-          })
-        )}
-      </div>
-    );
-  };
+            )}
 
-  // --- 視圖: 倒數日 ---
-  const renderCountdowns = () => {
-    const sorted = [...countdowns].sort((a, b) => new Date(a.date) - new Date(b.date));
-    return (
-      <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
-        <div className="flex items-center justify-between mb-8 px-2">
-          <h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>倒數日</h2>
-          <button onClick={() => { setIsCountdownModalOpen(true); setCdTitle(''); setCdDate(todayStr); }} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} transition-colors tracking-wide`}><Plus size={16} /> 新增</button>
-        </div>
-        <div className="space-y-3">
-          {sorted.length === 0 ? (
-            <div className={`py-10 text-center text-sm tracking-wider ${theme.textMuted}`}>尚未設定任何倒數日</div>
-          ) : (
-            sorted.map(cd => {
-              const days = calculateDays(cd.date);
-              const isPast = days < 0;
-              return (
-                <div key={cd.id} className={`flex items-center justify-between p-5 rounded-2xl ${theme.card} border ${theme.border} group`}>
-                  <div>
-                    <h3 className={`text-[15px] font-medium tracking-wide ${theme.textMain} mb-1`}>{cd.title}</h3>
-                    <p className={`text-[12px] tracking-wider ${theme.textMuted}`}>{cd.date.replace(/-/g, '.')}</p>
+            {currentTab === 'tasks' && viewMode === 'all' && (
+              <div className="max-w-3xl mx-auto space-y-10 animate-in fade-in duration-300">
+                {Object.keys(tasks.reduce((a, t) => { if (!a[t.date]) a[t.date] = []; a[t.date].push(t); return a; }, {})).sort().map(dateKey => (
+                  <div key={dateKey} className="space-y-4">
+                    <div className={`flex items-baseline gap-3 border-b ${dateKey === todayStr ? 'border-[#9ba8a2]' : theme.border} pb-2`}>
+                      <h3 className={`text-base font-medium tracking-widest ${dateKey === todayStr ? theme.primaryText : theme.textMain}`}>{dateKey.replace(/-/g, '.')}</h3>
+                      <span className={`text-xs ${theme.textMuted} tracking-wider`}>{getDayName(dateKey)}</span>
+                      {dateKey === todayStr && <span className={`ml-auto text-[10px] ${theme.primary} text-white px-1.5 py-0.5 rounded-sm tracking-widest`}>TODAY</span>}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {tasks.filter(t=>t.date === dateKey).map(task => <SwipeableItem key={task.id} task={{...task, showWeeklyBadge: true}} isOverdue={checkIsOverdue(task, todayStr)} onToggle={toggleTask} onEdit={(t)=>openTaskModal(t.type, t.date, t)} onDelete={handleDeleteTask} isOpen={openSwipeId === task.id} onOpen={() => setOpenSwipeId(task.id)} onClose={() => setOpenSwipeId(null)} />)}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-6">
-                    <div className="text-right">
-                      {days === 0 ? <span className={`text-xl font-medium ${theme.primaryText} tracking-widest`}>TODAY</span> : (
-                        <div className="flex items-baseline gap-1">
-                          <span className={`text-[11px] ${theme.textMuted} tracking-widest`}>{isPast ? '已過' : '剩餘'}</span>
-                          <span className={`text-2xl font-medium ${isPast ? theme.textMuted : theme.primaryText}`}>{Math.abs(days)}</span>
-                          <span className={`text-[11px] ${theme.textMuted} tracking-widest`}>天</span>
+                ))}
+              </div>
+            )}
+
+            {currentTab === 'reading' && (
+              <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
+                <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>閱讀清單</h2><button onClick={() => setIsBookModalOpen(true)} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} transition-colors tracking-wide`}><Plus size={16} /> 新增書籍</button></div>
+                <div className="space-y-4">
+                  {books.map(book => {
+                    const bookChapters = chapters.filter(c => c.bookId === book.id).sort((a,b) => b.updatedAt - a.updatedAt); 
+                    const isExpanded = expandedBookId === book.id;
+                    return (
+                      <div key={book.id} className={`rounded-2xl ${theme.card} border ${isExpanded ? 'border-[#9ba8a2] shadow-sm' : theme.border} overflow-hidden`}>
+                        <div onClick={() => setExpandedBookId(isExpanded ? null : book.id)} className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50/50">
+                          <div className="flex items-center gap-3 flex-1"><BookOpen size={20} className={theme.primaryText}/><h3 className={`text-[16px] font-medium tracking-wide ${theme.textMain} truncate`}>{book.title}</h3></div>
+                          <div className="flex items-center gap-4 ml-4">
+                            <button onClick={(e) => { e.stopPropagation(); handleDeleteBook(book.id); }} className={`p-1.5 text-[#c29b95] hover:bg-[#f5eeed] rounded-full`}><Trash2 size={16}/></button>
+                            {isExpanded ? <ChevronUp size={20} className={theme.textMuted}/> : <ChevronDown size={20} className={theme.textMuted}/>}
+                          </div>
                         </div>
-                      )}
-                    </div>
-                    <button onClick={() => handleDeleteCountdown(cd.id)} className={`opacity-0 group-hover:opacity-100 p-2 text-[#c29b95] hover:bg-[#f5eeed] rounded-full transition-all`}><Trash2 size={16} strokeWidth={1.5} /></button>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  // --- 視圖: 讀書進度 ---
-  const renderReading = () => {
-    return (
-      <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
-        <div className="flex items-center justify-between mb-8 px-2">
-          <h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>閱讀清單</h2>
-          <button onClick={() => setIsBookModalOpen(true)} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} transition-colors tracking-wide`}>
-            <Plus size={16} /> 新增書籍
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          {books.length === 0 ? (
-            <div className={`py-16 text-center text-sm tracking-wider ${theme.textMuted} bg-white rounded-3xl border ${theme.border} border-dashed`}>
-              書櫃空空的，新增一本書開始記錄吧！
-            </div>
-          ) : (
-            books.map(book => {
-              const bookChapters = chapters.filter(c => c.bookId === book.id).sort((a,b) => b.updatedAt - a.updatedAt); 
-              const isExpanded = expandedBookId === book.id;
-
-              return (
-                <div key={book.id} className={`rounded-2xl ${theme.card} border ${isExpanded ? 'border-[#9ba8a2] shadow-sm' : theme.border} transition-all overflow-hidden`}>
-                  <div onClick={() => setExpandedBookId(isExpanded ? null : book.id)} className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50/50 transition-colors">
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <BookOpen size={20} className={theme.primaryText} strokeWidth={1.5}/>
-                      <h3 className={`text-[16px] font-medium tracking-wide ${theme.textMain} truncate`}>{book.title}</h3>
-                    </div>
-                    <div className="flex items-center gap-4 ml-4">
-                      <button onClick={(e) => { e.stopPropagation(); handleDeleteBook(book.id); }} className={`p-1.5 text-[#c29b95] hover:bg-[#f5eeed] rounded-full transition-colors`}><Trash2 size={16} strokeWidth={1.5}/></button>
-                      {isExpanded ? <ChevronUp size={20} className={theme.textMuted}/> : <ChevronDown size={20} className={theme.textMuted}/>}
-                    </div>
-                  </div>
-
-                  {isExpanded && (
-                    <div className={`bg-[#fbfaf9] border-t ${theme.border} p-5`}>
-                      <div className="flex justify-between items-end mb-4">
-                        <span className={`text-[11px] tracking-widest ${theme.textMuted}`}>CHAPTERS ({bookChapters.length})</span>
-                        <button onClick={() => openChapterModal(book.id)} className={`text-[11px] flex items-center gap-1 ${theme.primaryText} hover:text-[#5c5d5a] tracking-widest`}><Plus size={12} strokeWidth={2}/> 新增章節進度</button>
-                      </div>
-
-                      <div className="space-y-2">
-                        {bookChapters.length === 0 ? (
-                          <div className={`text-[12px] text-center py-6 ${theme.textMuted} border border-dashed ${theme.border} rounded-xl`}>目前還沒有章節紀錄</div>
-                        ) : (
-                          bookChapters.map(chapter => {
-                            const percent = chapter.totalPages > 0 ? Math.min(100, Math.round((chapter.currentPage / chapter.totalPages) * 100)) : 0;
-                            const chapterItem = {
-                              id: chapter.id, title: chapter.title, isChapter: true, 
-                              percentage: percent, currentPage: chapter.currentPage, totalPages: chapter.totalPages, notes: chapter.notes,
-                              updatedAt: chapter.updatedAt
-                            };
-                            return (
-                              <SwipeableItem 
-                                key={chapter.id} task={chapterItem} hideCheck={true}
-                                onToggle={()=>{}} onEdit={() => openChapterModal(book.id, chapter)} onDelete={handleDeleteChapter} 
-                                isOpen={openSwipeId === chapter.id} onOpen={() => setOpenSwipeId(chapter.id)} onClose={() => setOpenSwipeId(null)} 
-                              />
-                            );
-                          })
+                        {isExpanded && (
+                          <div className={`bg-[#fbfaf9] border-t ${theme.border} p-5`}>
+                            <div className="flex justify-between items-end mb-4">
+                              <span className={`text-[11px] tracking-widest ${theme.textMuted}`}>CHAPTERS ({bookChapters.length})</span>
+                              <button onClick={() => openChapterModal(book.id)} className={`text-[11px] flex items-center gap-1 ${theme.primaryText} hover:text-[#5c5d5a] tracking-widest`}><Plus size={12} strokeWidth={2}/> 新增章節進度</button>
+                            </div>
+                            <div className="space-y-2">
+                              {bookChapters.map(chapter => (
+                                <SwipeableItem key={chapter.id} task={{id: chapter.id, title: chapter.title, isChapter: true, percentage: chapter.totalPages > 0 ? Math.min(100, Math.round((chapter.currentPage / chapter.totalPages) * 100)) : 0, currentPage: chapter.currentPage, totalPages: chapter.totalPages, notes: chapter.notes, updatedAt: chapter.updatedAt}} hideCheck={true} onToggle={()=>{}} onEdit={() => openChapterModal(book.id, chapter)} onDelete={handleDeleteChapter} isOpen={openSwipeId === chapter.id} onOpen={() => setOpenSwipeId(chapter.id)} onClose={() => setOpenSwipeId(null)} />
+                              ))}
+                            </div>
+                          </div>
                         )}
                       </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {currentTab === 'memo' && (
+              <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
+                <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>備忘錄</h2></div>
+                <div className={`mb-8 p-5 ${theme.card} rounded-2xl border ${theme.border} shadow-sm focus-within:border-[#9ba8a2] transition-colors`}>
+                  <textarea ref={memoInputRef} value={memoInput} onChange={(e) => setMemoInput(e.target.value)} placeholder="想到什麼，就寫下來吧..." className={`w-full bg-transparent resize-none outline-none text-[15px] leading-relaxed ${theme.textMain} placeholder:text-[#cccbcb] min-h-[100px]`} />
+                  <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-dashed border-[#ebeae5]">
+                    {editingMemoId && <button onClick={() => { setEditingMemoId(null); setMemoInput(''); }} className={`px-4 py-2 text-[#a3a6a1] text-[12px] tracking-widest font-medium rounded-xl hover:bg-gray-50 transition-colors`}>取消</button>}
+                    <button onClick={handleSaveMemo} className={`px-6 py-2 ${theme.primary} text-white text-[12px] tracking-widest font-medium rounded-xl ${theme.primaryHover} transition-colors`}>{editingMemoId ? '更 新' : '儲 存'}</button>
+                  </div>
+                </div>
+                <div className={`bg-white rounded-2xl border ${theme.border} py-2 px-2 shadow-sm`}>
+                  {memos.sort((a,b) => b.createdAt - a.createdAt).map((memo, index) => (
+                    <React.Fragment key={memo.id}>
+                      <SwipeableMemoItem memo={memo} onEdit={handleEditMemo} onDelete={handleDeleteMemo} isOpen={openSwipeId === memo.id} onOpen={() => setOpenSwipeId(memo.id)} onClose={() => setOpenSwipeId(null)} />
+                      {index < memos.length - 1 && <hr className={`border-t border-dashed ${theme.border} my-1 mx-2`} />}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {currentTab === 'countdown' && (
+              <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
+                <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>倒數日</h2><button onClick={() => { setIsCountdownModalOpen(true); setCdTitle(''); setCdDate(todayStr); }} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} tracking-wide`}><Plus size={16} /> 新增</button></div>
+                <div className="space-y-3">
+                  {countdowns.sort((a,b) => new Date(a.date) - new Date(b.date)).map(cd => {
+                    const days = calculateDays(cd.date);
+                    return (
+                      <div key={cd.id} className={`flex items-center justify-between p-5 rounded-2xl ${theme.card} border ${theme.border} group`}>
+                        <div><h3 className={`text-[15px] font-medium tracking-wide ${theme.textMain} mb-1`}>{cd.title}</h3><p className={`text-[12px] tracking-wider ${theme.textMuted}`}>{cd.date.replace(/-/g, '.')}</p></div>
+                        <div className="flex items-center gap-6">
+                          <div className="text-right">
+                            {days === 0 ? <span className={`text-xl font-medium ${theme.primaryText} tracking-widest`}>TODAY</span> : (
+                              <div className="flex items-baseline gap-1"><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>{days < 0 ? '已過' : '剩餘'}</span><span className={`text-2xl font-medium ${days < 0 ? theme.textMuted : theme.primaryText}`}>{Math.abs(days)}</span><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>天</span></div>
+                            )}
+                          </div>
+                          <button onClick={() => handleDeleteCountdown(cd.id)} className={`opacity-0 group-hover:opacity-100 p-2 text-[#c29b95] hover:bg-[#f5eeed] rounded-full`}><Trash2 size={16}/></button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {currentTab === 'profile' && (
+              <div className="max-w-md mx-auto mt-6 animate-in fade-in duration-300">
+                <div className={`p-8 rounded-3xl ${theme.card} border ${theme.border} shadow-sm`}>
+                  {!isEditingProfile ? (
+                    <>
+                      <div className="flex justify-center mb-4"><div className={`w-24 h-24 rounded-full ${theme.bg} border ${theme.border} flex items-center justify-center overflow-hidden`}><img src={profile.avatar || './IMG_2701.jpeg'} alt="avatar" className="w-full h-full object-cover" /></div></div>
+                      <div className="text-center space-y-4">
+                        <h2 className={`text-xl font-medium ${theme.textMain} tracking-wider`}>{profile.nickname}</h2><p className={`text-[11px] ${theme.textMuted}`}>{currentUserEmail}</p><p className={`text-sm ${theme.textMuted} pt-2`}>{profile.bio}</p>
+                        <div className="pt-6 flex gap-3 justify-center"><button onClick={() => setIsEditingProfile(true)} className={`px-6 py-2 rounded-full border ${theme.border} text-sm ${theme.textMain}`}>編輯</button><button onClick={handleLogout} className={`px-6 py-2 rounded-full border border-[#e3d1cf] text-sm text-[#c29b95]`}>登出</button></div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="text-center mb-6">
+                        <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-3`}>更換照片 (PHOTO)</label>
+                        <div className="flex justify-center"><div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}><div className={`w-20 h-20 rounded-full ${theme.bg} border ${theme.border} flex items-center justify-center overflow-hidden`}><img src={editProfileData.avatar || './IMG_2701.jpeg'} alt="avatar" className="w-full h-full object-cover" /></div><div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100"><Camera size={20} className="text-white"/></div><input type="file" className="hidden" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" /></div></div>
+                      </div>
+                      <div><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>NICKNAME</label><input type="text" value={editProfileData.nickname} onChange={e => setEditProfileData({...editProfileData, nickname: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} /></div>
+                      <div><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>BIO</label><textarea value={editProfileData.bio} onChange={e => setEditProfileData({...editProfileData, bio: e.target.value})} rows="3" className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl resize-none`} /></div>
+                      <div className="flex gap-3 pt-4"><button onClick={() => setIsEditingProfile(false)} className={`flex-1 py-2.5 rounded-xl border ${theme.border} text-sm`}>取消</button><button onClick={handleSaveProfile} className={`flex-1 py-2.5 rounded-xl ${theme.primary} text-white text-sm`}>儲存</button></div>
                     </div>
                   )}
                 </div>
-              );
-            })
+              </div>
+            )}
+          </main>
+
+          <nav className={`fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t ${theme.border} z-40 md:sticky md:bottom-auto md:border-t-0 md:bg-transparent md:py-6`}>
+            <div className="max-w-[400px] mx-auto flex justify-around py-3 md:bg-white md:rounded-full md:border md:shadow-sm md:py-2 md:px-4">
+              {[
+                { id: 'tasks', icon: CalendarDays, label: '任務' },
+                { id: 'reading', icon: BookOpen, label: '閱讀' },
+                { id: 'memo', icon: FileText, label: '備忘' },
+                { id: 'countdown', icon: Clock, label: '倒數' }
+              ].map(tab => (
+                <button key={tab.id} onClick={() => setCurrentTab(tab.id)} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-colors md:flex-row md:px-4 md:py-2 md:gap-2 flex-1 ${currentTab === tab.id ? `${theme.primaryText} md:bg-[#f0f2f1]` : `${theme.textMuted}`}`}><tab.icon size={20} /><span className="text-[10px] md:text-xs tracking-widest">{tab.label}</span></button>
+              ))}
+            </div>
+          </nav>
+
+          {isTaskModalOpen && (
+            <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
+              <div className={`${theme.card} w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6`}>
+                <div className="flex justify-between items-center mb-6"><h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>{editingTaskId ? '編輯任務' : '新增任務'}</h3><button onClick={() => setIsTaskModalOpen(false)} className={`p-1 ${theme.textMuted}`}><X size={18} /></button></div>
+                <form onSubmit={handleSaveTask} className="space-y-5">
+                  <div className="flex bg-[#fbfaf9] border border-[#ebeae5] p-1 rounded-xl mb-4">
+                    <button type="button" onClick={() => setModalType('daily')} className={`flex-1 py-2 text-[12px] tracking-widest rounded-lg ${modalType === 'daily' ? 'bg-white shadow-sm text-[#6a7c75] border border-[#ebeae5]' : 'text-[#a3a6a1]'}`}>每日任務</button>
+                    <button type="button" onClick={() => setModalType('weekly')} className={`flex-1 py-2 text-[12px] tracking-widest rounded-lg ${modalType === 'weekly' ? 'bg-white shadow-sm text-[#6a7c75] border border-[#ebeae5]' : 'text-[#a3a6a1]'}`}>整週目標</button>
+                  </div>
+                  <div><input type="text" autoFocus required value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="事項名稱..." className={`w-full px-0 py-2 bg-transparent border-b ${theme.border} outline-none text-[15px] ${theme.textMain}`} /></div>
+                  <div><input type="date" required value={modalDate} onChange={e => setModalDate(e.target.value)} className={`w-full px-0 py-2 bg-transparent border-b ${theme.border} outline-none text-[15px] ${theme.textMain}`} /></div>
+                  <div className="pt-4"><button type="submit" className={`w-full py-3 ${theme.primary} text-white rounded-xl text-sm tracking-widest`}>{editingTaskId ? '儲 存' : '確 認'}</button></div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {isCountdownModalOpen && (
+            <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
+              <div className={`${theme.card} w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6`}>
+                <div className="flex justify-between items-center mb-6"><h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>新增倒數</h3><button onClick={() => setIsCountdownModalOpen(false)} className={`p-1 ${theme.textMuted}`}><X size={18} /></button></div>
+                <form onSubmit={handleSaveCountdown} className="space-y-5">
+                  <div><input type="text" autoFocus required value={cdTitle} onChange={e => setCdTitle(e.target.value)} placeholder="倒數目標..." className={`w-full px-0 py-2 bg-transparent border-b ${theme.border} outline-none text-[15px] ${theme.textMain}`} /></div>
+                  <div><input type="date" required value={cdDate} onChange={e => setCdDate(e.target.value)} className={`w-full px-0 py-2 bg-transparent border-b ${theme.border} outline-none text-[15px] ${theme.textMain}`} /></div>
+                  <div className="pt-4"><button type="submit" className={`w-full py-3 ${theme.primary} text-white rounded-xl text-sm tracking-widest`}>新 增</button></div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {isBookModalOpen && (
+            <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
+              <div className={`${theme.card} w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6`}>
+                <div className="flex justify-between items-center mb-6"><h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>新增書籍</h3><button onClick={() => setIsBookModalOpen(false)} className={`p-1 ${theme.textMuted}`}><X size={18} /></button></div>
+                <form onSubmit={handleSaveBook} className="space-y-5">
+                  <div><input type="text" autoFocus required value={newBookTitle} onChange={e => setNewBookTitle(e.target.value)} placeholder="書名..." className={`w-full px-0 py-2 bg-transparent border-b ${theme.border} outline-none text-[15px] ${theme.textMain}`} /></div>
+                  <div className="pt-4"><button type="submit" className={`w-full py-3 ${theme.primary} text-white rounded-xl text-sm tracking-widest`}>確 認</button></div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {isChapterModalOpen && (
+            <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
+              <div className={`${theme.card} w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6 max-h-[90vh] overflow-y-auto custom-scrollbar`}>
+                <div className="flex justify-between items-center mb-6"><h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>{editingChapterId ? '更新章節進度' : '新增章節'}</h3><button onClick={() => setIsChapterModalOpen(false)} className={`p-1 ${theme.textMuted}`}><X size={18}/></button></div>
+                <form onSubmit={handleSaveChapter} className="space-y-6">
+                  <div><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>章節名稱</label><input type="text" required value={chapterForm.title} onChange={e => setChapterForm({...chapterForm, title: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} /></div>
+                  <div className="flex gap-4">
+                    <div className="flex-1"><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>已讀頁數</label><input type="number" min="0" required value={chapterForm.currentPage} onChange={e => setChapterForm({...chapterForm, currentPage: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} /></div>
+                    <div className="flex-1"><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>此章總頁數</label><input type="number" min="1" required value={chapterForm.totalPages} onChange={e => setChapterForm({...chapterForm, totalPages: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} /></div>
+                  </div>
+                  <div><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>筆記</label><textarea value={chapterForm.notes} onChange={e => setChapterForm({...chapterForm, notes: e.target.value})} rows="4" placeholder="紀錄重點..." className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl resize-none`} /></div>
+                  <div className="pt-2"><button type="submit" className={`w-full py-3 ${theme.primary} text-white rounded-xl text-sm tracking-widest`}>{editingChapterId ? '儲 存' : '新 增'}</button></div>
+                </form>
+              </div>
+            </div>
           )}
         </div>
-      </div>
-    );
-  };
+      );
+    }
 
-  // --- 視圖: 備忘錄 ---
-  const renderMemo = () => {
-    const sortedMemos = [...memos].sort((a, b) => b.createdAt - a.createdAt);
-
-    return (
-      <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
-        <div className="flex items-center justify-between mb-8 px-2">
-          <h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>備忘錄</h2>
-        </div>
-
-        <div className={`mb-8 p-5 ${theme.card} rounded-2xl border ${theme.border} shadow-sm focus-within:border-[#9ba8a2] transition-colors`}>
-          <textarea
-            ref={memoInputRef}
-            value={memoInput}
-            onChange={(e) => setMemoInput(e.target.value)}
-            placeholder="想到什麼，就寫下來吧..."
-            className={`w-full bg-transparent resize-none outline-none text-[15px] leading-relaxed ${theme.textMain} placeholder:text-[#cccbcb] min-h-[100px]`}
-          />
-          <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-dashed border-[#ebeae5]">
-            {editingMemoId && (
-              <button 
-                onClick={() => { setEditingMemoId(null); setMemoInput(''); }} 
-                className={`px-4 py-2 text-[#a3a6a1] text-[12px] tracking-widest font-medium rounded-xl hover:bg-gray-50 transition-colors`}
-              >
-                取消
-              </button>
-            )}
-            <button 
-              onClick={handleSaveMemo} 
-              className={`px-6 py-2 ${theme.primary} text-white text-[12px] tracking-widest font-medium rounded-xl ${theme.primaryHover} transition-colors`}
-            >
-              {editingMemoId ? '更 新' : '儲 存'}
-            </button>
-          </div>
-        </div>
-
-        <div className={`bg-white rounded-2xl border ${theme.border} py-2 px-2 shadow-sm`}>
-          {sortedMemos.length === 0 ? (
-            <div className={`text-center text-sm tracking-wider ${theme.textMuted} py-12`}>目前沒有任何備忘紀錄</div>
-          ) : (
-            sortedMemos.map((memo, index) => (
-              <React.Fragment key={memo.id}>
-                <SwipeableMemoItem
-                  memo={memo}
-                  onEdit={handleEditMemo}
-                  onDelete={handleDeleteMemo}
-                  isOpen={openSwipeId === memo.id}
-                  onOpen={() => setOpenSwipeId(memo.id)}
-                  onClose={() => setOpenSwipeId(null)}
-                />
-                {index < sortedMemos.length - 1 && (
-                  <hr className={`border-t border-dashed ${theme.border} my-1 mx-2`} />
-                )}
-              </React.Fragment>
-            ))
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  // --- 視圖: 個人介面 ---
-  const renderProfile = () => (
-    <div className="max-w-md mx-auto mt-6 animate-in fade-in duration-300">
-      <div className={`p-8 rounded-3xl ${theme.card} border ${theme.border} shadow-sm`}>
-        {!isEditingProfile ? (
-          <>
-            <div className="flex justify-center mb-4">
-              <div className={`w-24 h-24 rounded-full ${theme.bg} border ${theme.border} flex items-center justify-center overflow-hidden shadow-sm`}>
-                {profile.avatar ? <img src={profile.avatar} alt="avatar" className="w-full h-full object-cover" /> : <User size={32} className={theme.textMuted} strokeWidth={1.5} />}
-              </div>
-            </div>
-            <div className="text-center space-y-4">
-              <h2 className={`text-xl font-medium ${theme.textMain} tracking-wider`}>{profile.nickname}</h2>
-              <p className={`text-[11px] ${theme.textMuted} tracking-wider`}>{currentUserEmail}</p>
-              <p className={`text-sm ${theme.textMuted} tracking-wide leading-relaxed pt-2`}>{profile.bio}</p>
-              <div className="pt-6 flex gap-3 justify-center">
-                <button onClick={() => setIsEditingProfile(true)} className={`px-6 py-2 rounded-full border ${theme.border} text-sm ${theme.textMain} hover:bg-gray-50 transition-colors tracking-widest`}>編輯</button>
-                <button onClick={handleLogout} className={`px-6 py-2 rounded-full border border-[#e3d1cf] text-sm text-[#c29b95] hover:bg-[#f5eeed] transition-colors tracking-widest flex items-center gap-2`}>登出</button>
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="space-y-6">
-            <div className="text-center mb-6">
-              <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-3`}>更換照片 (PHOTO)</label>
-              <div className="flex justify-center">
-                <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-                  <div className={`w-20 h-20 rounded-full ${theme.bg} border ${theme.border} flex items-center justify-center overflow-hidden transition-all group-hover:border-[#9ba8a2]`}>
-                    {editProfileData.avatar ? <img src={editProfileData.avatar} alt="avatar" className="w-full h-full object-cover" /> : <User size={32} className={theme.textMuted} strokeWidth={1.5} />}
-                  </div>
-                  <div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Camera size={20} className="text-white" strokeWidth={2} />
-                  </div>
-                  <input type="file" className="hidden" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" />
-                </div>
-              </div>
-            </div>
-            <div>
-              <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>NICKNAME (暱稱)</label>
-              <input type="text" value={editProfileData.nickname} onChange={e => setEditProfileData({...editProfileData, nickname: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl focus:outline-none focus:border-[#9ba8a2] text-[15px] ${theme.textMain}`} />
-            </div>
-            <div>
-              <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>BIO (個人簡介)</label>
-              <textarea value={editProfileData.bio} onChange={e => setEditProfileData({...editProfileData, bio: e.target.value})} rows="3" className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl focus:outline-none focus:border-[#9ba8a2] text-[15px] ${theme.textMain} resize-none`} />
-            </div>
-            <div className="flex gap-3 pt-4">
-              <button onClick={() => { setIsEditingProfile(false); setEditProfileData(profile); }} className={`flex-1 py-2.5 rounded-xl border ${theme.border} text-sm ${theme.textMain} hover:bg-gray-50 transition-colors tracking-widest`}>取消</button>
-              <button onClick={handleSaveProfile} className={`flex-1 py-2.5 rounded-xl ${theme.primary} text-white text-sm ${theme.primaryHover} transition-colors tracking-widest`}>儲存</button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  return (
-    <div className={`min-h-screen ${theme.bg} font-sans flex flex-col pb-24 md:pb-0`} onClick={() => setOpenSwipeId(null)}>
-      
-      {/* 頂部 Header */}
-      <header className={`sticky top-0 z-30 bg-[#f7f6f2]/90 backdrop-blur-md px-6 py-5 flex items-center justify-between`}>
-        <div className={`text-lg font-medium tracking-widest ${theme.textMain} flex items-center gap-2`}>
-          MINIMAL<span className="text-[10px] text-[#a3a6a1]">CALENDAR</span>
-        </div>
-        <div className={`w-10 h-10 rounded-full ${theme.card} border ${theme.border} flex items-center justify-center overflow-hidden shadow-sm cursor-pointer hover:border-[#9ba8a2] transition-colors`} onClick={() => setCurrentTab('profile')} title="個人檔案">
-          {profile.avatar ? <img src={profile.avatar} alt="avatar" className="w-full h-full object-cover" /> : <User size={18} className={theme.textMuted} strokeWidth={1.5} />}
-        </div>
-      </header>
-
-      {/* 主要內容區 */}
-      <main className="flex-1 p-6 overflow-x-hidden">
-        {currentTab === 'tasks' && (
-          <div className={`flex items-center justify-between mb-8 border-b ${theme.border} px-2`}>
-            <div className="flex items-center gap-6">
-              <button onClick={() => setViewMode('week')} className={`text-[13px] tracking-widest pb-3 -mb-[1px] transition-colors ${viewMode === 'week' ? `text-[#6a7c75] border-b-2 border-[#6a7c75] font-medium` : `text-[#a3a6a1] hover:${theme.textMain}`}`}>WEEK (週曆)</button>
-              <button onClick={() => setViewMode('all')} className={`text-[13px] tracking-widest pb-3 -mb-[1px] transition-colors ${viewMode === 'all' ? `text-[#6a7c75] border-b-2 border-[#6a7c75] font-medium` : `text-[#a3a6a1] hover:${theme.textMain}`}`}>ALL (全部)</button>
-            </div>
-            {viewMode === 'all' && (
-              <button onClick={() => openTaskModal('daily', todayStr)} className={`text-[12px] flex items-center gap-1.5 ${theme.primaryText} hover:text-[#5c5d5a] pb-3 -mb-[1px] transition-colors tracking-wide`}><Plus size={14} strokeWidth={2}/> 新增任務</button>
-            )}
-          </div>
-        )}
-
-        {currentTab === 'tasks' && (viewMode === 'week' ? renderWeekView() : renderAllView())}
-        {currentTab === 'reading' && renderReading()}
-        {currentTab === 'memo' && renderMemo()}
-        {currentTab === 'countdown' && renderCountdowns()}
-        {currentTab === 'profile' && renderProfile()}
-      </main>
-
-      {/* 底部導航列 */}
-      <nav className={`fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t ${theme.border} z-40 md:sticky md:bottom-auto md:border-t-0 md:bg-transparent md:py-6`}>
-        <div className="max-w-[400px] mx-auto flex justify-around py-3 md:bg-white md:rounded-full md:border md:shadow-sm md:py-2 md:px-4">
-          {[
-            { id: 'tasks', icon: CalendarDays, label: '任務' },
-            { id: 'reading', icon: BookOpen, label: '閱讀' },
-            { id: 'memo', icon: FileText, label: '備忘' },
-            { id: 'countdown', icon: Clock, label: '倒數' }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setCurrentTab(tab.id)}
-              className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-colors md:flex-row md:px-4 md:py-2 md:gap-2 flex-1
-                ${currentTab === tab.id ? `${theme.primaryText} md:bg-[#f0f2f1]` : `${theme.textMuted} hover:${theme.textMain}`}`}
-            >
-              <tab.icon size={20} strokeWidth={currentTab === tab.id ? 2 : 1.5} />
-              <span className="text-[10px] tracking-widest font-medium md:text-xs">{tab.label}</span>
-            </button>
-          ))}
-        </div>
-      </nav>
-
-      {/* 任務編輯 Modal */}
-      {isTaskModalOpen && (
-        <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
-          <div className={`${theme.card} w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6 animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200`}>
-            <div className="flex justify-between items-center mb-6">
-              <h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>{editingTaskId ? '編輯任務' : '新增任務'}</h3>
-              <button onClick={() => setIsTaskModalOpen(false)} className={`p-1 ${theme.textMuted} hover:${theme.textMain}`}><X size={18} strokeWidth={1.5} /></button>
-            </div>
-            <form onSubmit={handleSaveTask} className="space-y-5">
-              <div className="flex bg-[#fbfaf9] border border-[#ebeae5] p-1 rounded-xl mb-4">
-                <button type="button" onClick={() => setModalType('daily')} className={`flex-1 py-2 text-[12px] tracking-widest rounded-lg transition-all ${modalType === 'daily' ? 'bg-white shadow-sm text-[#6a7c75] font-medium border border-[#ebeae5]' : 'text-[#a3a6a1]'}`}>每日任務</button>
-                <button type="button" onClick={() => setModalType('weekly')} className={`flex-1 py-2 text-[12px] tracking-widest rounded-lg transition-all ${modalType === 'weekly' ? 'bg-white shadow-sm text-[#6a7c75] font-medium border border-[#ebeae5]' : 'text-[#a3a6a1]'}`}>整週目標</button>
-              </div>
-              <div><input type="text" autoFocus required value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="事項名稱..." className={`w-full px-0 py-2 bg-transparent border-b ${theme.border} focus:border-[#9ba8a2] outline-none text-[15px] ${theme.textMain} transition-colors placeholder:text-[#cccbcb]`} /></div>
-              <div>
-                <input type="date" required value={modalDate} onChange={e => setModalDate(e.target.value)} className={`w-full px-0 py-2 bg-transparent border-b ${theme.border} focus:border-[#9ba8a2] outline-none text-[15px] ${theme.textMain} transition-colors`} />
-                {modalType === 'weekly' && <p className={`text-[10px] ${theme.textMuted} mt-2 tracking-wide`}>*日期將自動歸類至該週的星期一</p>}
-              </div>
-              <div className="pt-4"><button type="submit" className={`w-full py-3 ${theme.primary} text-white rounded-xl text-sm tracking-widest font-medium ${theme.primaryHover} transition-colors`}>{editingTaskId ? '儲 存' : '確 認'}</button></div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 倒數日新增 Modal */}
-      {isCountdownModalOpen && (
-        <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
-          <div className={`${theme.card} w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6 animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200`}>
-            <div className="flex justify-between items-center mb-6">
-              <h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>NEW COUNTDOWN</h3>
-              <button onClick={() => setIsCountdownModalOpen(false)} className={`p-1 ${theme.textMuted} hover:${theme.textMain}`}><X size={18} strokeWidth={1.5} /></button>
-            </div>
-            <form onSubmit={handleSaveCountdown} className="space-y-5">
-              <div><input type="text" autoFocus required value={cdTitle} onChange={e => setCdTitle(e.target.value)} placeholder="倒數目標..." className={`w-full px-0 py-2 bg-transparent border-b ${theme.border} focus:border-[#9ba8a2] outline-none text-[15px] ${theme.textMain} transition-colors placeholder:text-[#cccbcb]`} /></div>
-              <div><input type="date" required value={cdDate} onChange={e => setCdDate(e.target.value)} className={`w-full px-0 py-2 bg-transparent border-b ${theme.border} focus:border-[#9ba8a2] outline-none text-[15px] ${theme.textMain} transition-colors`} /></div>
-              <div className="pt-4"><button type="submit" className={`w-full py-3 ${theme.primary} text-white rounded-xl text-sm tracking-widest font-medium ${theme.primaryHover} transition-colors`}>新 增</button></div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 新增書籍 Modal */}
-      {isBookModalOpen && (
-        <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
-          <div className={`${theme.card} w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6 animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200`}>
-            <div className="flex justify-between items-center mb-6">
-              <h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>新增書籍</h3>
-              <button onClick={() => setIsBookModalOpen(false)} className={`p-1 ${theme.textMuted} hover:${theme.textMain}`}><X size={18} strokeWidth={1.5} /></button>
-            </div>
-            <form onSubmit={handleSaveBook} className="space-y-5">
-              <div>
-                <input type="text" autoFocus required value={newBookTitle} onChange={e => setNewBookTitle(e.target.value)} placeholder="書名..." className={`w-full px-0 py-2 bg-transparent border-b ${theme.border} focus:border-[#9ba8a2] outline-none text-[15px] ${theme.textMain} transition-colors placeholder:text-[#cccbcb]`} />
-              </div>
-              <div className="pt-4"><button type="submit" className={`w-full py-3 ${theme.primary} text-white rounded-xl text-sm tracking-widest font-medium ${theme.primaryHover} transition-colors`}>確 認</button></div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 新增/編輯 章節 Modal */}
-      {isChapterModalOpen && (
-        <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
-          <div className={`${theme.card} w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6 animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto custom-scrollbar`}>
-            <div className="flex justify-between items-center mb-6">
-              <h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>{editingChapterId ? '更新章節進度' : '新增章節'}</h3>
-              <button onClick={() => setIsChapterModalOpen(false)} className={`p-1 ${theme.textMuted} hover:${theme.textMain}`}><X size={18} strokeWidth={1.5} /></button>
-            </div>
-            <form onSubmit={handleSaveChapter} className="space-y-6">
-              <div>
-                <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>CHAPTER TITLE (章節名稱)</label>
-                <input type="text" required value={chapterForm.title} onChange={e => setChapterForm({...chapterForm, title: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl focus:outline-none focus:border-[#9ba8a2] text-[15px] ${theme.textMain}`} />
-              </div>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>READ (已讀頁數)</label>
-                  <input type="number" min="0" required value={chapterForm.currentPage} onChange={e => setChapterForm({...chapterForm, currentPage: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl focus:outline-none focus:border-[#9ba8a2] text-[15px] ${theme.textMain}`} />
-                </div>
-                <div className="flex-1">
-                  <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>TOTAL (此章總頁數)</label>
-                  <input type="number" min="1" required value={chapterForm.totalPages} onChange={e => setChapterForm({...chapterForm, totalPages: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl focus:outline-none focus:border-[#9ba8a2] text-[15px] ${theme.textMain}`} />
-                </div>
-              </div>
-              <div>
-                <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>NOTES (筆記)</label>
-                <textarea value={chapterForm.notes} onChange={e => setChapterForm({...chapterForm, notes: e.target.value})} rows="4" placeholder="紀錄這章的重點..." className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl focus:outline-none focus:border-[#9ba8a2] text-[15px] ${theme.textMain} resize-none`} />
-              </div>
-              <div className="pt-2"><button type="submit" className={`w-full py-3 ${theme.primary} text-white rounded-xl text-sm tracking-widest font-medium ${theme.primaryHover} transition-colors`}>{editingChapterId ? '儲 存' : '新 增'}</button></div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      <style dangerouslySetInnerHTML={{__html: `
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #d3dbd8; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #9ba8a2; }
-      `}} />
-    </div>
-  );
-}
-
+    const root = createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
 
 ```
