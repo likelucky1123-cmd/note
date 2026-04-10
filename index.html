@@ -6,24 +6,47 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Minimal Calendar</title>
   
-  <!-- 讓手機加入桌面時變成全螢幕 App 的設定 -->
+  <!-- iOS 加入主畫面的全螢幕設定 -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  
+  <!-- 設定您的專屬圖片為手機桌面 Icon -->
   <link rel="apple-touch-icon" href="./IMG_2701.jpeg">
-  <link rel="manifest" href="./manifest.json">
+  
+  <!-- 動態 PWA Manifest 佔位符 -->
+  <link id="manifest-link" rel="manifest">
 
   <!-- 引入 Tailwind CSS 與 Babel 翻譯器 -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <style>
-    /* 自訂捲軸樣式 */
+    /* 莫蘭迪風格捲軸 */
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #d3dbd8; border-radius: 10px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #9ba8a2; }
     body { font-family: sans-serif; -webkit-tap-highlight-color: transparent; }
   </style>
+
+  <script>
+    // 動態生成 PWA 憑證，讓 Android 也能加入桌面
+    document.addEventListener("DOMContentLoaded", () => {
+      const manifest = {
+        name: "Minimal Calendar",
+        short_name: "MinimalCal",
+        display: "standalone",
+        background_color: "#f7f6f2",
+        theme_color: "#9ba8a2",
+        icons: [
+          { src: "./IMG_2701.jpeg", sizes: "192x192", type: "image/jpeg", purpose: "any maskable" },
+          { src: "./IMG_2701.jpeg", sizes: "512x512", type: "image/jpeg", purpose: "any maskable" }
+        ]
+      };
+      const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+      document.getElementById('manifest-link').href = URL.createObjectURL(blob);
+    });
+  </script>
 </head>
 <body class="bg-[#f7f6f2] m-0 p-0">
   <div id="root"></div>
@@ -55,7 +78,7 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
-    const appIdStr = "minimal-calendar-app"; // 資料庫根目錄名稱
+    const appIdStr = "minimal-calendar-app"; 
 
     // --- 莫蘭迪色系常數 ---
     const theme = {
@@ -109,7 +132,7 @@
       return false;
     };
 
-    // --- 左滑互動組件 ---
+    // --- 左滑互動組件 (任務與章節) ---
     const SwipeableItem = ({ task, onToggle, onEdit, onDelete, isOverdue, isOpen, onOpen, onClose, hideCheck = false }) => {
       const [translateX, setTranslateX] = useState(0);
       const [isDragging, setIsDragging] = useState(false);
@@ -186,6 +209,7 @@
       );
     };
 
+    // --- 左滑互動組件 (備忘錄) ---
     const SwipeableMemoItem = ({ memo, onEdit, onDelete, isOpen, onOpen, onClose }) => {
       const [translateX, setTranslateX] = useState(0);
       const [isDragging, setIsDragging] = useState(false);
@@ -235,7 +259,7 @@
       );
     };
 
-    // --- 主程式 ---
+    // --- 主程式 App ---
     function App() {
       const [realUser, setRealUser] = useState(null);
       const [authLoading, setAuthLoading] = useState(true);
@@ -336,7 +360,7 @@
             await setDoc(accountRef, { email: authEmail, password: authPassword });
             setAuthSuccessMsg('註冊成功！請重新登入。'); setIsLoginMode(true); setAuthPassword(''); setAuthConfirmPassword('');
           }
-        } catch (err) { console.error(err); setAuthError('系統錯誤，請確認Firebase規則是否正確'); }
+        } catch (err) { console.error(err); setAuthError('系統錯誤，請確認Firebase的規則(Rules)已開放權限'); }
       };
 
       const handleLogout = () => { setIsAppUnlocked(false); setCurrentUserEmail(''); setAuthEmail(''); setCurrentTab('tasks'); setViewMode('week'); };
@@ -431,7 +455,7 @@
       const handleSaveProfile = async () => { if(!realUser) return; await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'profile', 'info'), editProfileData); setProfile(editProfileData); setIsEditingProfile(false); };
 
 
-      // --- 渲染 ---
+      // --- 渲染畫面 ---
       if (authLoading) return <div className={`min-h-screen ${theme.bg}`}></div>;
       
       if (!isAppUnlocked) {
@@ -458,7 +482,8 @@
           <header className={`sticky top-0 z-30 bg-[#f7f6f2]/90 backdrop-blur-md px-6 py-5 flex items-center justify-between`}>
             <div className={`text-lg font-medium tracking-widest ${theme.textMain} flex items-center gap-2`}>MINIMAL<span className="text-[10px] text-[#a3a6a1]">CALENDAR</span></div>
             <div className={`w-10 h-10 rounded-full ${theme.card} border ${theme.border} flex items-center justify-center overflow-hidden shadow-sm cursor-pointer hover:border-[#9ba8a2] transition-colors`} onClick={() => setCurrentTab('profile')}>
-              {profile.avatar ? <img src={profile.avatar} alt="avatar" className="w-full h-full object-cover" /> : <User size={18} className={theme.textMuted} strokeWidth={1.5} />}
+              {/* 加入您專屬圖片的回退機制 */}
+              <img src={profile.avatar || './IMG_2701.jpeg'} alt="avatar" className="w-full h-full object-cover" />
             </div>
           </header>
 
@@ -721,5 +746,6 @@
   </script>
 </body>
 </html>
+
 
 ```
