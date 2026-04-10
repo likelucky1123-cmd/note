@@ -321,12 +321,23 @@
       const currentWeekStart = useMemo(() => getStartOfWeek(currentDateStr), [currentDateStr]);
       const weekDays = useMemo(() => Array.from({ length: 7 }).map((_, i) => addDays(currentWeekStart, i)), [currentWeekStart]);
 
+      // --- 真正的 Firebase Auth 監聽 ---
       useEffect(() => {
-        auth.signInAnonymously().catch(err => console.error(err));
-        const unsubscribe = auth.onAuthStateChanged((u) => { setRealUser(u); setAuthLoading(false); });
+        const unsubscribe = auth.onAuthStateChanged((user) => {
+          if (user) {
+            setRealUser(user);
+            setCurrentUserEmail(user.email || '');
+            setIsAppUnlocked(true);
+          } else {
+            setRealUser(null);
+            setIsAppUnlocked(false);
+          }
+          setAuthLoading(false);
+        });
         return () => unsubscribe();
       }, []);
 
+      // --- 資料監聽 ---
       useEffect(() => {
         if (!realUser || !isAppUnlocked) return;
         const userRef = db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid);
@@ -349,30 +360,41 @@
         return () => { unsubTasks(); unsubCd(); unsubBooks(); unsubChapters(); unsubMemos(); };
       }, [realUser, isAppUnlocked, currentUserEmail]);
 
+      // --- 真正的 Firebase 原生登入/註冊處理 ---
       const handleAuthSubmit = async (e) => {
-        e.preventDefault(); if (!realUser) return;
+        e.preventDefault();
         setAuthError(''); setAuthSuccessMsg('');
-        const safeEmailId = authEmail.replace(/[^a-zA-Z0-9]/g, '_');
-        const accountRef = db.collection('artifacts').doc(appIdStr).collection('public').doc('data').collection('accounts').doc(safeEmailId);
         
         try {
           if (isLoginMode) {
-            const docSnap = await accountRef.get();
-            if (docSnap.exists && docSnap.data().password === authPassword) {
-              setCurrentUserEmail(authEmail); setIsAppUnlocked(true); setAuthPassword('');
-            } else { setAuthError('帳號或密碼錯誤'); }
+            // 使用 Firebase 內建信箱密碼登入
+            await auth.signInWithEmailAndPassword(authEmail, authPassword);
+            // 成功後 onAuthStateChanged 會自動將 isAppUnlocked 設為 true
           } else {
             if (authPassword !== authConfirmPassword) { setAuthError('兩次密碼不一致'); return; }
             if (authPassword.length < 6) { setAuthError('密碼需至少6碼'); return; }
-            const docSnap = await accountRef.get();
-            if (docSnap.exists) { setAuthError('此信箱已被註冊'); return; }
-            await accountRef.set({ email: authEmail, password: authPassword });
-            setAuthSuccessMsg('註冊成功！請重新登入。'); setIsLoginMode(true); setAuthPassword(''); setAuthConfirmPassword('');
+            
+            // 使用 Firebase 內建註冊功能
+            await auth.createUserWithEmailAndPassword(authEmail, authPassword);
+            setAuthSuccessMsg('註冊成功！請重新登入。'); 
+            await auth.signOut(); // 註冊後要求重新登入
+            setIsLoginMode(true); 
+            setAuthPassword(''); 
+            setAuthConfirmPassword('');
           }
-        } catch (err) { console.error(err); setAuthError('系統連線錯誤，請確認Firebase的規則是否允許讀寫'); }
+        } catch (err) { 
+          console.error(err); 
+          if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+            setAuthError('帳號或密碼錯誤');
+          } else if (err.code === 'auth/email-already-in-use') {
+            setAuthError('此信箱已被註冊');
+          } else {
+            setAuthError('發生錯誤：' + err.message); 
+          }
+        }
       };
 
-      const handleLogout = () => { setIsAppUnlocked(false); setCurrentUserEmail(''); setAuthEmail(''); setCurrentTab('tasks'); setViewMode('week'); };
+      const handleLogout = () => { auth.signOut(); setCurrentTab('tasks'); setViewMode('week'); };
 
       // --- Task ---
       const toggleTask = async (task) => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('tasks').doc(task.id).set({ ...task, completed: !task.completed });
@@ -491,9 +513,7 @@
           <header className={`sticky top-0 z-30 bg-[#f7f6f2]/90 backdrop-blur-md px-6 py-5 flex items-center justify-between`}>
             <div className={`text-lg font-medium tracking-widest ${theme.textMain} flex items-center gap-2`}>MINIMAL<span className="text-[10px] text-[#a3a6a1]">CALENDAR</span></div>
             <div className={`w-10 h-10 rounded-full ${theme.card} border ${theme.border} flex items-center justify-center overflow-hidden shadow-sm cursor-pointer hover:border-[#9ba8a2] transition-colors`} onClick={() => setCurrentTab('profile')}>
-              {/* 加入您專屬圖片的回退機制 */}
-              <img src={profile.avatar || './IMG_2701.jpeg'} alt="avatar" className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.style.display='none'; e.target.nextSibling.style.display='block'; }} />
-              <i className={`fas fa-user text-lg ${theme.textMuted}`} style={{display: 'none'}}></i>
+              {profile.avatar ? <img src={profile.avatar} alt="avatar" className="w-full h-full object-cover" /> : <i className={`fas fa-user text-lg ${theme.textMuted}`}></i>}
             </div>
           </header>
 
@@ -756,4 +776,3 @@
   </script>
 </body>
 </html>
-
