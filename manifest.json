@@ -1,0 +1,19 @@
+```json
+{
+  "name": "Minimal Calendar",
+  "short_name": "MinimalCal",
+  "display": "standalone",
+  "start_url": ".",
+  "background_color": "#f7f6f2",
+  "theme_color": "#9ba8a2",
+  "icons": [
+    {
+      "src": "IMG_2701.jpeg",
+      "sizes": "192x192 512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
+
+```
