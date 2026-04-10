@@ -10,7 +10,7 @@ import {
 } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, getDoc } from 'firebase/firestore';
 
-// --- Firebase 初始化 (已替換為您的專屬金鑰) ---
+// --- Firebase 初始化 (您的專屬金鑰) ---
 const firebaseConfig = {
   apiKey: "AIzaSyDKVLVYRGvsiuFmQIXuFCU9O2TBVVRb3gk",
   authDomain: "popcorn-ee2cc.firebaseapp.com",
@@ -25,7 +25,6 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// 定義您在資料庫中的根目錄名稱
 const appId = "minimal-calendar-app"; 
 
 // --- 莫蘭迪色系常數 ---
@@ -56,7 +55,6 @@ const formatDate = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-// 格式化時間戳記為 MM.DD HH:mm
 const formatTimestamp = (timestamp) => {
   if (!timestamp) return '';
   const date = new Date(timestamp);
@@ -326,13 +324,17 @@ export default function App() {
     metaStatus.content = 'black-translucent';
     document.head.appendChild(metaStatus);
 
-    const iconSvg = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgcng9IjIyIiBmaWxsPSIjOWJhOGEyIi8+PHRleHQgeD0iNTAiIHk9IjUyIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSI0MCIgZm9udC13ZWlnaHQ9ImJvbGQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGFsaWdubWVudC1iYXNlbGluZT0iY2VudHJhbCIgZmlsbD0id2hpdGUiPk1DPC90ZXh0Pjwvc3ZnPg==';
+    // ★★★ 將圖示換成您的照片檔案 ★★★
+    // 假設您的檔案名稱為 IMG_2701.jpeg，並且放在專案的 public 目錄下
+    const iconPath = './IMG_2701.jpeg'; 
     
+    // Apple Touch Icon
     const linkIcon = document.createElement('link');
     linkIcon.rel = 'apple-touch-icon';
-    linkIcon.href = iconSvg;
+    linkIcon.href = iconPath;
     document.head.appendChild(linkIcon);
 
+    // PWA Manifest
     const manifest = {
       name: "Minimal Calendar",
       short_name: "MinimalCal",
@@ -340,10 +342,11 @@ export default function App() {
       background_color: "#f7f6f2",
       theme_color: "#9ba8a2",
       icons: [
-        { src: iconSvg, sizes: "192x192", type: "image/svg+xml" },
-        { src: iconSvg, sizes: "512x512", type: "image/svg+xml" }
+        { src: iconPath, sizes: "192x192", type: "image/jpeg" },
+        { src: iconPath, sizes: "512x512", type: "image/jpeg" }
       ]
     };
+    
     const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
     const linkManifest = document.createElement('link');
     linkManifest.id = 'pwa-setup';
@@ -356,7 +359,6 @@ export default function App() {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        // 在您自己的專案中，可能不需要自訂 Token，直接匿名登入即可
         await signInAnonymously(auth);
       } catch (error) {
         console.error('底層驗證初始化失敗:', error);
