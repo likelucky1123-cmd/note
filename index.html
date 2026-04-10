@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -11,14 +10,27 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   
   <!-- 設定您的專屬圖片為手機桌面 Icon -->
+  <link rel="icon" href="./IMG_2701.jpeg">
   <link rel="apple-touch-icon" href="./IMG_2701.jpeg">
   
   <!-- 動態 PWA Manifest 佔位符 -->
   <link id="manifest-link" rel="manifest">
 
-  <!-- 引入 Tailwind CSS 與 Babel 翻譯器 -->
+  <!-- 1. 載入 Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- 2. 載入 FontAwesome 圖標庫 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- 3. 載入 React 核心 -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- 4. 載入 Firebase 穩定版引擎 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
   <style>
     /* 莫蘭迪風格捲軸 */
@@ -26,7 +38,7 @@
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #d3dbd8; border-radius: 10px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #9ba8a2; }
-    body { font-family: sans-serif; -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
   </style>
 
   <script>
@@ -52,19 +64,10 @@
   <div id="root"></div>
 
   <!-- React 應用程式核心 -->
-  <script type="text/babel" data-type="module">
-    import React, { useState, useMemo, useEffect, useRef } from 'https://esm.sh/react@18.2.0';
-    import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
-    import { 
-      CalendarDays, X, Pencil, Trash2, GripVertical,
-      Clock, User, LogOut, CheckCircle2, Circle, ChevronLeft, ChevronRight, 
-      Plus, Camera, BookOpen, ChevronDown, ChevronUp, FileText, Download
-    } from 'https://esm.sh/lucide-react@0.292.0?external=react';
-    import { initializeApp } from 'https://esm.sh/firebase@10.7.1/app';
-    import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://esm.sh/firebase@10.7.1/auth';
-    import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, getDoc } from 'https://esm.sh/firebase@10.7.1/firestore';
+  <script type="text/babel">
+    const { useState, useMemo, useEffect, useRef } = React;
 
-    // --- Firebase 初始化 (已寫入您的金鑰) ---
+    // --- Firebase 初始化 (使用您的專屬金鑰) ---
     const firebaseConfig = {
       apiKey: "AIzaSyDKVLVYRGvsiuFmQIXuFCU9O2TBVVRb3gk",
       authDomain: "popcorn-ee2cc.firebaseapp.com",
@@ -75,9 +78,9 @@
       measurementId: "G-N8CGBLE373"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getFirestore(app);
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
     const appIdStr = "minimal-calendar-app"; 
 
     // --- 莫蘭迪色系常數 ---
@@ -165,10 +168,10 @@
         <div className="relative mb-2 rounded-xl overflow-hidden group h-full max-h-min border border-transparent hover:border-[#ebeae5] transition-colors">
           <div className="absolute right-0 top-0 bottom-0 flex h-full rounded-xl overflow-hidden">
             <button onClick={(e) => { e.stopPropagation(); onClose(); onEdit(task); }} className="w-[50px] bg-[#d3dbd8] hover:bg-[#c2cbc8] text-[#5c5d5a] flex flex-col justify-center items-center">
-              <Pencil size={16} strokeWidth={1.5} />
+              <i className="fas fa-pen text-base"></i>
             </button>
             <button onClick={(e) => { e.stopPropagation(); onClose(); onDelete(task.id); }} className="w-[50px] bg-[#e3d1cf] hover:bg-[#d4bebb] text-[#8c6b66] flex flex-col justify-center items-center">
-              <Trash2 size={16} strokeWidth={1.5} />
+              <i className="fas fa-trash text-base"></i>
             </button>
           </div>
           <div
@@ -179,7 +182,7 @@
           >
             {!hideCheck && (
               <div className="mt-0.5 flex-shrink-0" onClick={(e) => { e.stopPropagation(); onToggle(task); }}>
-                {task.completed ? <CheckCircle2 size={18} strokeWidth={1.5} className="text-[#a3a6a1]" /> : <Circle size={18} strokeWidth={1.5} className="text-[#d1d5db]" />}
+                {task.completed ? <i className="fas fa-check-circle text-lg text-[#a3a6a1]"></i> : <i className="far fa-circle text-lg text-[#d1d5db]"></i>}
               </div>
             )}
             <div className="flex-1 min-w-0 flex flex-col select-none pt-0.5">
@@ -209,7 +212,7 @@
       );
     };
 
-    // --- 左滑互動組件 (備忘錄) ---
+    // --- 左滑互動組件 (備忘錄專用) ---
     const SwipeableMemoItem = ({ memo, onEdit, onDelete, isOpen, onOpen, onClose }) => {
       const [translateX, setTranslateX] = useState(0);
       const [isDragging, setIsDragging] = useState(false);
@@ -241,8 +244,8 @@
       return (
         <div className="relative group overflow-hidden bg-white">
           <div className="absolute right-0 top-0 bottom-0 flex h-full">
-            <button onClick={(e) => { e.stopPropagation(); onClose(); onEdit(memo); }} className="w-[50px] bg-[#d3dbd8] hover:bg-[#c2cbc8] text-[#5c5d5a] flex flex-col justify-center items-center"><Pencil size={16} strokeWidth={1.5} /></button>
-            <button onClick={(e) => { e.stopPropagation(); onClose(); onDelete(memo.id); }} className="w-[50px] bg-[#e3d1cf] hover:bg-[#d4bebb] text-[#8c6b66] flex flex-col justify-center items-center"><Trash2 size={16} strokeWidth={1.5} /></button>
+            <button onClick={(e) => { e.stopPropagation(); onClose(); onEdit(memo); }} className="w-[50px] bg-[#d3dbd8] hover:bg-[#c2cbc8] text-[#5c5d5a] flex flex-col justify-center items-center"><i className="fas fa-pen text-base"></i></button>
+            <button onClick={(e) => { e.stopPropagation(); onClose(); onDelete(memo.id); }} className="w-[50px] bg-[#e3d1cf] hover:bg-[#d4bebb] text-[#8c6b66] flex flex-col justify-center items-center"><i className="fas fa-trash text-base"></i></button>
           </div>
           <div
             className="relative z-10 flex flex-col py-4 px-2 bg-white transition-transform h-full cursor-pointer"
@@ -316,21 +319,23 @@
       const weekDays = useMemo(() => Array.from({ length: 7 }).map((_, i) => addDays(currentWeekStart, i)), [currentWeekStart]);
 
       useEffect(() => {
-        signInAnonymously(auth).catch(err => console.error(err));
-        const unsubscribe = onAuthStateChanged(auth, (u) => { setRealUser(u); setAuthLoading(false); });
+        auth.signInAnonymously().catch(err => console.error(err));
+        const unsubscribe = auth.onAuthStateChanged((u) => { setRealUser(u); setAuthLoading(false); });
         return () => unsubscribe();
       }, []);
 
       useEffect(() => {
         if (!realUser || !isAppUnlocked) return;
-        const unsubTasks = onSnapshot(collection(db, 'artifacts', appIdStr, 'users', realUser.uid, 'tasks'), s => setTasks(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-        const unsubCd = onSnapshot(collection(db, 'artifacts', appIdStr, 'users', realUser.uid, 'countdowns'), s => setCountdowns(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-        const unsubBooks = onSnapshot(collection(db, 'artifacts', appIdStr, 'users', realUser.uid, 'books'), s => setBooks(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-        const unsubChapters = onSnapshot(collection(db, 'artifacts', appIdStr, 'users', realUser.uid, 'chapters'), s => setChapters(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-        const unsubMemos = onSnapshot(collection(db, 'artifacts', appIdStr, 'users', realUser.uid, 'memos'), s => setMemos(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const userRef = db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid);
+        
+        const unsubTasks = userRef.collection('tasks').onSnapshot(s => setTasks(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubCd = userRef.collection('countdowns').onSnapshot(s => setCountdowns(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubBooks = userRef.collection('books').onSnapshot(s => setBooks(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubChapters = userRef.collection('chapters').onSnapshot(s => setChapters(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubMemos = userRef.collection('memos').onSnapshot(s => setMemos(s.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-        getDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'profile', 'info')).then(pSnap => {
-          if (pSnap.exists()) {
+        userRef.collection('profile').doc('info').get().then(pSnap => {
+          if (pSnap.exists) {
             const data = pSnap.data();
             setProfile({ ...data, avatar: data.avatar || '' }); setEditProfileData({ ...data, avatar: data.avatar || '' });
           } else {
@@ -345,38 +350,39 @@
         e.preventDefault(); if (!realUser) return;
         setAuthError(''); setAuthSuccessMsg('');
         const safeEmailId = authEmail.replace(/[^a-zA-Z0-9]/g, '_');
-        const accountRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', safeEmailId);
+        const accountRef = db.collection('artifacts').doc(appIdStr).collection('public').doc('data').collection('accounts').doc(safeEmailId);
+        
         try {
           if (isLoginMode) {
-            const docSnap = await getDoc(accountRef);
-            if (docSnap.exists() && docSnap.data().password === authPassword) {
+            const docSnap = await accountRef.get();
+            if (docSnap.exists && docSnap.data().password === authPassword) {
               setCurrentUserEmail(authEmail); setIsAppUnlocked(true); setAuthPassword('');
             } else { setAuthError('帳號或密碼錯誤'); }
           } else {
             if (authPassword !== authConfirmPassword) { setAuthError('兩次密碼不一致'); return; }
             if (authPassword.length < 6) { setAuthError('密碼需至少6碼'); return; }
-            const docSnap = await getDoc(accountRef);
-            if (docSnap.exists()) { setAuthError('此信箱已被註冊'); return; }
-            await setDoc(accountRef, { email: authEmail, password: authPassword });
+            const docSnap = await accountRef.get();
+            if (docSnap.exists) { setAuthError('此信箱已被註冊'); return; }
+            await accountRef.set({ email: authEmail, password: authPassword });
             setAuthSuccessMsg('註冊成功！請重新登入。'); setIsLoginMode(true); setAuthPassword(''); setAuthConfirmPassword('');
           }
-        } catch (err) { console.error(err); setAuthError('系統錯誤，請確認Firebase的規則(Rules)已開放權限'); }
+        } catch (err) { console.error(err); setAuthError('系統連線錯誤，請稍後再試'); }
       };
 
       const handleLogout = () => { setIsAppUnlocked(false); setCurrentUserEmail(''); setAuthEmail(''); setCurrentTab('tasks'); setViewMode('week'); };
 
       // --- Task ---
-      const toggleTask = async (task) => await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'tasks', task.id), { ...task, completed: !task.completed });
-      const handleDeleteTask = async (taskId) => await deleteDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'tasks', taskId));
+      const toggleTask = async (task) => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('tasks').doc(task.id).set({ ...task, completed: !task.completed });
+      const handleDeleteTask = async (taskId) => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('tasks').doc(taskId).delete();
       const handleSaveTask = async (e) => {
         e.preventDefault(); if (!newTaskTitle.trim() || !realUser) return;
         const finalDate = modalType === 'weekly' ? getStartOfWeek(modalDate) : modalDate;
         const taskData = { title: newTaskTitle.trim(), type: modalType, date: finalDate, completed: false, updatedAt: Date.now() };
         if (editingTaskId) {
           const currentStatus = tasks.find(t => t.id === editingTaskId)?.completed || false;
-          await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'tasks', editingTaskId), { ...taskData, completed: currentStatus }, { merge: true });
+          await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('tasks').doc(editingTaskId).set({ ...taskData, completed: currentStatus }, { merge: true });
         } else {
-          await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'tasks', Date.now().toString()), { ...taskData, createdAt: Date.now() });
+          await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('tasks').doc(Date.now().toString()).set({ ...taskData, createdAt: Date.now() });
         }
         setIsTaskModalOpen(false);
       };
@@ -389,44 +395,44 @@
         const now = Date.now();
         if (editingMemoId) {
           const existingMemo = memos.find(m => m.id === editingMemoId);
-          await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'memos', editingMemoId), { content: memoInput.trim(), createdAt: existingMemo?.createdAt || now }, { merge: true });
+          await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('memos').doc(editingMemoId).set({ content: memoInput.trim(), createdAt: existingMemo?.createdAt || now }, { merge: true });
           setEditingMemoId(null);
         } else {
-          await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'memos', now.toString()), { content: memoInput.trim(), createdAt: now });
+          await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('memos').doc(now.toString()).set({ content: memoInput.trim(), createdAt: now });
         }
         setMemoInput(''); 
       };
-      const handleDeleteMemo = async (id) => await deleteDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'memos', id));
+      const handleDeleteMemo = async (id) => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('memos').doc(id).delete();
 
       // --- Countdown ---
       const handleSaveCountdown = async (e) => {
         e.preventDefault(); if (!cdTitle.trim() || !realUser) return;
-        await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'countdowns', Date.now().toString()), { title: cdTitle.trim(), date: cdDate, createdAt: Date.now() });
+        await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('countdowns').doc(Date.now().toString()).set({ title: cdTitle.trim(), date: cdDate, createdAt: Date.now() });
         setIsCountdownModalOpen(false); setCdTitle('');
       };
-      const handleDeleteCountdown = async (id) => await deleteDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'countdowns', id));
+      const handleDeleteCountdown = async (id) => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('countdowns').doc(id).delete();
       const calculateDays = (targetDateStr) => Math.ceil((new Date(targetDateStr) - new Date(todayStr)) / (1000 * 60 * 60 * 24));
 
       // --- Books ---
       const handleSaveBook = async (e) => {
         e.preventDefault(); if (!newBookTitle.trim() || !realUser) return;
-        await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'books', Date.now().toString()), { title: newBookTitle.trim(), createdAt: Date.now() });
+        await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('books').doc(Date.now().toString()).set({ title: newBookTitle.trim(), createdAt: Date.now() });
         setNewBookTitle(''); setIsBookModalOpen(false);
       };
       const handleDeleteBook = async (id) => {
         if(!window.confirm("確定刪除這本書及所有相關章節進度？")) return;
-        await deleteDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'books', id));
-        chapters.filter(c => c.bookId === id).forEach(async (c) => await deleteDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'chapters', c.id)));
+        await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('books').doc(id).delete();
+        chapters.filter(c => c.bookId === id).forEach(async (c) => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('chapters').doc(c.id).delete());
       };
       const handleSaveChapter = async (e) => {
         e.preventDefault(); if (!chapterForm.title.trim() || !realUser || !targetBookIdForChapter) return;
         const now = Date.now();
         const data = { bookId: targetBookIdForChapter, title: chapterForm.title.trim(), totalPages: parseInt(chapterForm.totalPages) || 0, currentPage: parseInt(chapterForm.currentPage) || 0, notes: chapterForm.notes || '', updatedAt: now };
-        if (editingChapterId) await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'chapters', editingChapterId), data, { merge: true });
-        else await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'chapters', now.toString()), { ...data, createdAt: now });
+        if (editingChapterId) await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('chapters').doc(editingChapterId).set(data, { merge: true });
+        else await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('chapters').doc(now.toString()).set({ ...data, createdAt: now });
         setIsChapterModalOpen(false);
       };
-      const handleDeleteChapter = async (id) => await deleteDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'chapters', id));
+      const handleDeleteChapter = async (id) => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('chapters').doc(id).delete();
       const openChapterModal = (bookId, chapter = null) => {
         setTargetBookIdForChapter(bookId);
         if (chapter) { setChapterForm({ title: chapter.title, totalPages: chapter.totalPages, currentPage: chapter.currentPage, notes: chapter.notes }); setEditingChapterId(chapter.id); } 
@@ -452,7 +458,7 @@
         };
         reader.readAsDataURL(file);
       };
-      const handleSaveProfile = async () => { if(!realUser) return; await setDoc(doc(db, 'artifacts', appIdStr, 'users', realUser.uid, 'profile', 'info'), editProfileData); setProfile(editProfileData); setIsEditingProfile(false); };
+      const handleSaveProfile = async () => { if(!realUser) return; await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('profile').doc('info').set(editProfileData); setProfile(editProfileData); setIsEditingProfile(false); };
 
 
       // --- 渲染畫面 ---
@@ -482,8 +488,7 @@
           <header className={`sticky top-0 z-30 bg-[#f7f6f2]/90 backdrop-blur-md px-6 py-5 flex items-center justify-between`}>
             <div className={`text-lg font-medium tracking-widest ${theme.textMain} flex items-center gap-2`}>MINIMAL<span className="text-[10px] text-[#a3a6a1]">CALENDAR</span></div>
             <div className={`w-10 h-10 rounded-full ${theme.card} border ${theme.border} flex items-center justify-center overflow-hidden shadow-sm cursor-pointer hover:border-[#9ba8a2] transition-colors`} onClick={() => setCurrentTab('profile')}>
-              {/* 加入您專屬圖片的回退機制 */}
-              <img src={profile.avatar || './IMG_2701.jpeg'} alt="avatar" className="w-full h-full object-cover" />
+              {profile.avatar ? <img src={profile.avatar} alt="avatar" className="w-full h-full object-cover" /> : <i className={`fas fa-user text-lg ${theme.textMuted}`}></i>}
             </div>
           </header>
 
@@ -494,7 +499,7 @@
                   <button onClick={() => setViewMode('week')} className={`text-[13px] tracking-widest pb-3 -mb-[1px] transition-colors ${viewMode === 'week' ? `text-[#6a7c75] border-b-2 border-[#6a7c75] font-medium` : `text-[#a3a6a1] hover:${theme.textMain}`}`}>WEEK (週曆)</button>
                   <button onClick={() => setViewMode('all')} className={`text-[13px] tracking-widest pb-3 -mb-[1px] transition-colors ${viewMode === 'all' ? `text-[#6a7c75] border-b-2 border-[#6a7c75] font-medium` : `text-[#a3a6a1] hover:${theme.textMain}`}`}>ALL (全部)</button>
                 </div>
-                {viewMode === 'all' && <button onClick={() => openTaskModal('daily', todayStr)} className={`text-[12px] flex items-center gap-1.5 ${theme.primaryText} hover:text-[#5c5d5a] pb-3 -mb-[1px] transition-colors tracking-wide`}><Plus size={14} strokeWidth={2}/> 新增任務</button>}
+                {viewMode === 'all' && <button onClick={() => openTaskModal('daily', todayStr)} className={`text-[12px] flex items-center gap-1.5 ${theme.primaryText} hover:text-[#5c5d5a] pb-3 -mb-[1px] transition-colors tracking-wide`}><i className="fas fa-plus"></i> 新增任務</button>}
               </div>
             )}
 
@@ -503,22 +508,22 @@
                 {showPWAPrompt && (
                   <div className={`bg-white border ${theme.border} text-[#6a7c75] p-4 rounded-2xl mb-2 text-sm flex items-start justify-between shadow-sm`}>
                     <div>
-                      <strong className="block mb-1.5 font-medium tracking-wider text-[#5c5d5a] flex items-center gap-1.5"><Download size={16} className={theme.primaryText} /> 加入桌面 App</strong>
+                      <strong className="block mb-1.5 font-medium tracking-wider text-[#5c5d5a] flex items-center gap-1.5"><i className="fas fa-download text-[#9ba8a2]"></i> 加入桌面 App</strong>
                       <div className="text-[12px] leading-relaxed text-[#a3a6a1]"><span className="font-medium text-[#85928c]">iOS Safari：</span>點底部「分享」➔ 加入主畫面<br/><span className="font-medium text-[#85928c]">Android：</span>點右上「⋮」➔ 加到主畫面</div>
                     </div>
-                    <button onClick={() => setShowPWAPrompt(false)} className={`p-1.5 hover:bg-gray-50 rounded-full text-[#a3a6a1] hover:text-[#5c5d5a]`}><X size={16}/></button>
+                    <button onClick={() => setShowPWAPrompt(false)} className={`p-1.5 hover:bg-gray-50 rounded-full text-[#a3a6a1] hover:text-[#5c5d5a]`}><i className="fas fa-times"></i></button>
                   </div>
                 )}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
-                    <button onClick={() => setCurrentDateStr(addDays(currentDateStr, -7))} className={`p-2 ${theme.textMuted} hover:${theme.textMain}`}><ChevronLeft size={20} strokeWidth={1.5} /></button>
+                    <button onClick={() => setCurrentDateStr(addDays(currentDateStr, -7))} className={`p-2 ${theme.textMuted} hover:${theme.textMain}`}><i className="fas fa-chevron-left text-xl"></i></button>
                     <span className={`font-medium tracking-wider ${theme.textMain} text-sm min-w-[200px] text-center`}>{currentWeekStart.replace(/-/g, '.')} — {addDays(currentWeekStart, 6).replace(/-/g, '.')}</span>
-                    <button onClick={() => setCurrentDateStr(addDays(currentDateStr, 7))} className={`p-2 ${theme.textMuted} hover:${theme.textMain}`}><ChevronRight size={20} strokeWidth={1.5} /></button>
+                    <button onClick={() => setCurrentDateStr(addDays(currentDateStr, 7))} className={`p-2 ${theme.textMuted} hover:${theme.textMain}`}><i className="fas fa-chevron-right text-xl"></i></button>
                     <button onClick={() => setCurrentDateStr(todayStr)} className={`text-xs px-3 py-1.5 rounded-full border ${theme.border} ${theme.textMuted} hidden md:block`}>回到本週</button>
                   </div>
                 </div>
                 <div className="mb-10">
-                  <div className="flex items-center justify-between mb-4 px-2"><h2 className={`text-sm font-medium tracking-widest ${theme.primaryText}`}>WEEKLY GOALS</h2><button onClick={() => openTaskModal('weekly', currentWeekStart)} className={`text-xs ${theme.textMuted} hover:${theme.primaryText} flex items-center gap-1`}><Plus size={14} /> 新增</button></div>
+                  <div className="flex items-center justify-between mb-4 px-2"><h2 className={`text-sm font-medium tracking-widest ${theme.primaryText}`}>WEEKLY GOALS</h2><button onClick={() => openTaskModal('weekly', currentWeekStart)} className={`text-xs ${theme.textMuted} hover:${theme.primaryText} flex items-center gap-1`}><i className="fas fa-plus"></i> 新增</button></div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                     {tasks.filter(t => t.type === 'weekly' && t.date === currentWeekStart).map(task => <SwipeableItem key={task.id} task={task} isOverdue={checkIsOverdue(task, todayStr)} onToggle={toggleTask} onEdit={(t)=>openTaskModal('weekly', t.date, t)} onDelete={handleDeleteTask} isOpen={openSwipeId === task.id} onOpen={() => setOpenSwipeId(task.id)} onClose={() => setOpenSwipeId(null)} />)}
                   </div>
@@ -533,7 +538,7 @@
                       </div>
                       <div className="flex-1 flex flex-col gap-1">
                         {tasks.filter(t => t.type === 'daily' && t.date === dateStr).map(task => <SwipeableItem key={task.id} task={task} isOverdue={checkIsOverdue(task, todayStr)} onToggle={toggleTask} onEdit={(t)=>openTaskModal('daily', t.date, t)} onDelete={handleDeleteTask} isOpen={openSwipeId === task.id} onOpen={() => setOpenSwipeId(task.id)} onClose={() => setOpenSwipeId(null)} />)}
-                        <button onClick={() => openTaskModal('daily', dateStr)} className={`w-full text-left py-2 px-3 mt-1 text-[13px] ${theme.textMuted} hover:${theme.primaryText} rounded-xl hover:bg-white flex items-center gap-1.5`}><Plus size={14} /> 添加事項...</button>
+                        <button onClick={() => openTaskModal('daily', dateStr)} className={`w-full text-left py-2 px-3 mt-1 text-[13px] ${theme.textMuted} hover:${theme.primaryText} rounded-xl hover:bg-white flex items-center gap-1.5`}><i className="fas fa-plus"></i> 添加事項...</button>
                       </div>
                     </div>
                   ))}
@@ -560,7 +565,7 @@
 
             {currentTab === 'reading' && (
               <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
-                <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>閱讀清單</h2><button onClick={() => setIsBookModalOpen(true)} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} transition-colors tracking-wide`}><Plus size={16} /> 新增書籍</button></div>
+                <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>閱讀清單</h2><button onClick={() => setIsBookModalOpen(true)} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} transition-colors tracking-wide`}><i className="fas fa-plus"></i> 新增書籍</button></div>
                 <div className="space-y-4">
                   {books.map(book => {
                     const bookChapters = chapters.filter(c => c.bookId === book.id).sort((a,b) => b.updatedAt - a.updatedAt); 
@@ -568,17 +573,17 @@
                     return (
                       <div key={book.id} className={`rounded-2xl ${theme.card} border ${isExpanded ? 'border-[#9ba8a2] shadow-sm' : theme.border} overflow-hidden`}>
                         <div onClick={() => setExpandedBookId(isExpanded ? null : book.id)} className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50/50">
-                          <div className="flex items-center gap-3 flex-1"><BookOpen size={20} className={theme.primaryText}/><h3 className={`text-[16px] font-medium tracking-wide ${theme.textMain} truncate`}>{book.title}</h3></div>
+                          <div className="flex items-center gap-3 flex-1"><i className={`fas fa-book-open text-xl ${theme.primaryText}`}></i><h3 className={`text-[16px] font-medium tracking-wide ${theme.textMain} truncate`}>{book.title}</h3></div>
                           <div className="flex items-center gap-4 ml-4">
-                            <button onClick={(e) => { e.stopPropagation(); handleDeleteBook(book.id); }} className={`p-1.5 text-[#c29b95] hover:bg-[#f5eeed] rounded-full`}><Trash2 size={16}/></button>
-                            {isExpanded ? <ChevronUp size={20} className={theme.textMuted}/> : <ChevronDown size={20} className={theme.textMuted}/>}
+                            <button onClick={(e) => { e.stopPropagation(); handleDeleteBook(book.id); }} className={`p-1.5 text-[#c29b95] hover:bg-[#f5eeed] rounded-full`}><i className="fas fa-trash"></i></button>
+                            {isExpanded ? <i className={`fas fa-chevron-up text-xl ${theme.textMuted}`}></i> : <i className={`fas fa-chevron-down text-xl ${theme.textMuted}`}></i>}
                           </div>
                         </div>
                         {isExpanded && (
                           <div className={`bg-[#fbfaf9] border-t ${theme.border} p-5`}>
                             <div className="flex justify-between items-end mb-4">
                               <span className={`text-[11px] tracking-widest ${theme.textMuted}`}>CHAPTERS ({bookChapters.length})</span>
-                              <button onClick={() => openChapterModal(book.id)} className={`text-[11px] flex items-center gap-1 ${theme.primaryText} hover:text-[#5c5d5a] tracking-widest`}><Plus size={12} strokeWidth={2}/> 新增章節進度</button>
+                              <button onClick={() => openChapterModal(book.id)} className={`text-[11px] flex items-center gap-1 ${theme.primaryText} hover:text-[#5c5d5a] tracking-widest`}><i className="fas fa-plus"></i> 新增章節進度</button>
                             </div>
                             <div className="space-y-2">
                               {bookChapters.map(chapter => (
@@ -617,7 +622,7 @@
 
             {currentTab === 'countdown' && (
               <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
-                <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>倒數日</h2><button onClick={() => { setIsCountdownModalOpen(true); setCdTitle(''); setCdDate(todayStr); }} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} tracking-wide`}><Plus size={16} /> 新增</button></div>
+                <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>倒數日</h2><button onClick={() => { setIsCountdownModalOpen(true); setCdTitle(''); setCdDate(todayStr); }} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} tracking-wide`}><i className="fas fa-plus"></i> 新增</button></div>
                 <div className="space-y-3">
                   {countdowns.sort((a,b) => new Date(a.date) - new Date(b.date)).map(cd => {
                     const days = calculateDays(cd.date);
@@ -630,7 +635,7 @@
                               <div className="flex items-baseline gap-1"><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>{days < 0 ? '已過' : '剩餘'}</span><span className={`text-2xl font-medium ${days < 0 ? theme.textMuted : theme.primaryText}`}>{Math.abs(days)}</span><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>天</span></div>
                             )}
                           </div>
-                          <button onClick={() => handleDeleteCountdown(cd.id)} className={`opacity-0 group-hover:opacity-100 p-2 text-[#c29b95] hover:bg-[#f5eeed] rounded-full`}><Trash2 size={16}/></button>
+                          <button onClick={() => handleDeleteCountdown(cd.id)} className={`opacity-0 group-hover:opacity-100 p-2 text-[#c29b95] hover:bg-[#f5eeed] rounded-full`}><i className="fas fa-trash"></i></button>
                         </div>
                       </div>
                     );
@@ -654,7 +659,7 @@
                     <div className="space-y-6">
                       <div className="text-center mb-6">
                         <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-3`}>更換照片 (PHOTO)</label>
-                        <div className="flex justify-center"><div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}><div className={`w-20 h-20 rounded-full ${theme.bg} border ${theme.border} flex items-center justify-center overflow-hidden`}><img src={editProfileData.avatar || './IMG_2701.jpeg'} alt="avatar" className="w-full h-full object-cover" /></div><div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100"><Camera size={20} className="text-white"/></div><input type="file" className="hidden" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" /></div></div>
+                        <div className="flex justify-center"><div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}><div className={`w-20 h-20 rounded-full ${theme.bg} border ${theme.border} flex items-center justify-center overflow-hidden`}><img src={editProfileData.avatar || './IMG_2701.jpeg'} alt="avatar" className="w-full h-full object-cover" /></div><div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100"><i className="fas fa-camera text-white text-xl"></i></div><input type="file" className="hidden" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" /></div></div>
                       </div>
                       <div><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>NICKNAME</label><input type="text" value={editProfileData.nickname} onChange={e => setEditProfileData({...editProfileData, nickname: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} /></div>
                       <div><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>BIO</label><textarea value={editProfileData.bio} onChange={e => setEditProfileData({...editProfileData, bio: e.target.value})} rows="3" className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl resize-none`} /></div>
@@ -669,12 +674,12 @@
           <nav className={`fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t ${theme.border} z-40 md:sticky md:bottom-auto md:border-t-0 md:bg-transparent md:py-6`}>
             <div className="max-w-[400px] mx-auto flex justify-around py-3 md:bg-white md:rounded-full md:border md:shadow-sm md:py-2 md:px-4">
               {[
-                { id: 'tasks', icon: CalendarDays, label: '任務' },
-                { id: 'reading', icon: BookOpen, label: '閱讀' },
-                { id: 'memo', icon: FileText, label: '備忘' },
-                { id: 'countdown', icon: Clock, label: '倒數' }
+                { id: 'tasks', icon: 'fa-calendar-alt', label: '任務' },
+                { id: 'reading', icon: 'fa-book-open', label: '閱讀' },
+                { id: 'memo', icon: 'fa-file-alt', label: '備忘' },
+                { id: 'countdown', icon: 'fa-clock', label: '倒數' }
               ].map(tab => (
-                <button key={tab.id} onClick={() => setCurrentTab(tab.id)} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-colors md:flex-row md:px-4 md:py-2 md:gap-2 flex-1 ${currentTab === tab.id ? `${theme.primaryText} md:bg-[#f0f2f1]` : `${theme.textMuted}`}`}><tab.icon size={20} /><span className="text-[10px] md:text-xs tracking-widest">{tab.label}</span></button>
+                <button key={tab.id} onClick={() => setCurrentTab(tab.id)} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-colors md:flex-row md:px-4 md:py-2 md:gap-2 flex-1 ${currentTab === tab.id ? `${theme.primaryText} md:bg-[#f0f2f1]` : `${theme.textMuted}`}`}><i className={`fas ${tab.icon} text-xl`}></i><span className="text-[10px] md:text-xs tracking-widest">{tab.label}</span></button>
               ))}
             </div>
           </nav>
@@ -682,7 +687,7 @@
           {isTaskModalOpen && (
             <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
               <div className={`${theme.card} w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6`}>
-                <div className="flex justify-between items-center mb-6"><h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>{editingTaskId ? '編輯任務' : '新增任務'}</h3><button onClick={() => setIsTaskModalOpen(false)} className={`p-1 ${theme.textMuted}`}><X size={18} /></button></div>
+                <div className="flex justify-between items-center mb-6"><h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>{editingTaskId ? '編輯任務' : '新增任務'}</h3><button onClick={() => setIsTaskModalOpen(false)} className={`p-1 ${theme.textMuted}`}><i className="fas fa-times text-lg"></i></button></div>
                 <form onSubmit={handleSaveTask} className="space-y-5">
                   <div className="flex bg-[#fbfaf9] border border-[#ebeae5] p-1 rounded-xl mb-4">
                     <button type="button" onClick={() => setModalType('daily')} className={`flex-1 py-2 text-[12px] tracking-widest rounded-lg ${modalType === 'daily' ? 'bg-white shadow-sm text-[#6a7c75] border border-[#ebeae5]' : 'text-[#a3a6a1]'}`}>每日任務</button>
@@ -699,7 +704,7 @@
           {isCountdownModalOpen && (
             <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
               <div className={`${theme.card} w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6`}>
-                <div className="flex justify-between items-center mb-6"><h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>新增倒數</h3><button onClick={() => setIsCountdownModalOpen(false)} className={`p-1 ${theme.textMuted}`}><X size={18} /></button></div>
+                <div className="flex justify-between items-center mb-6"><h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>新增倒數</h3><button onClick={() => setIsCountdownModalOpen(false)} className={`p-1 ${theme.textMuted}`}><i className="fas fa-times text-lg"></i></button></div>
                 <form onSubmit={handleSaveCountdown} className="space-y-5">
                   <div><input type="text" autoFocus required value={cdTitle} onChange={e => setCdTitle(e.target.value)} placeholder="倒數目標..." className={`w-full px-0 py-2 bg-transparent border-b ${theme.border} outline-none text-[15px] ${theme.textMain}`} /></div>
                   <div><input type="date" required value={cdDate} onChange={e => setCdDate(e.target.value)} className={`w-full px-0 py-2 bg-transparent border-b ${theme.border} outline-none text-[15px] ${theme.textMain}`} /></div>
@@ -712,7 +717,7 @@
           {isBookModalOpen && (
             <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
               <div className={`${theme.card} w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6`}>
-                <div className="flex justify-between items-center mb-6"><h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>新增書籍</h3><button onClick={() => setIsBookModalOpen(false)} className={`p-1 ${theme.textMuted}`}><X size={18} /></button></div>
+                <div className="flex justify-between items-center mb-6"><h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>新增書籍</h3><button onClick={() => setIsBookModalOpen(false)} className={`p-1 ${theme.textMuted}`}><i className="fas fa-times text-lg"></i></button></div>
                 <form onSubmit={handleSaveBook} className="space-y-5">
                   <div><input type="text" autoFocus required value={newBookTitle} onChange={e => setNewBookTitle(e.target.value)} placeholder="書名..." className={`w-full px-0 py-2 bg-transparent border-b ${theme.border} outline-none text-[15px] ${theme.textMain}`} /></div>
                   <div className="pt-4"><button type="submit" className={`w-full py-3 ${theme.primary} text-white rounded-xl text-sm tracking-widest`}>確 認</button></div>
@@ -724,7 +729,7 @@
           {isChapterModalOpen && (
             <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
               <div className={`${theme.card} w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6 max-h-[90vh] overflow-y-auto custom-scrollbar`}>
-                <div className="flex justify-between items-center mb-6"><h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>{editingChapterId ? '更新章節進度' : '新增章節'}</h3><button onClick={() => setIsChapterModalOpen(false)} className={`p-1 ${theme.textMuted}`}><X size={18}/></button></div>
+                <div className="flex justify-between items-center mb-6"><h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>{editingChapterId ? '更新章節進度' : '新增章節'}</h3><button onClick={() => setIsChapterModalOpen(false)} className={`p-1 ${theme.textMuted}`}><i className="fas fa-times text-lg"></i></button></div>
                 <form onSubmit={handleSaveChapter} className="space-y-6">
                   <div><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>章節名稱</label><input type="text" required value={chapterForm.title} onChange={e => setChapterForm({...chapterForm, title: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} /></div>
                   <div className="flex gap-4">
@@ -746,6 +751,3 @@
   </script>
 </body>
 </html>
-
-
-```
