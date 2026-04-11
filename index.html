@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   
-  <!-- 設定您的專屬圖片為手機桌面 Icon -->
+  <!-- 設定您的專屬圖片為手機桌面 App 的圖示 -->
   <link rel="icon" href="./IMG_2701.jpeg">
   <link rel="apple-touch-icon" href="./IMG_2701.jpeg">
   
@@ -19,7 +19,7 @@
   <!-- 1. 載入 Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- 2. 載入 FontAwesome 圖標庫 -->
+  <!-- 2. 載入 FontAwesome 圖標庫 (用於 App 內部的極簡圖標) -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
   <!-- 3. 載入 React 核心 -->
@@ -42,7 +42,7 @@
   </style>
 
   <script>
-    // 動態生成 PWA 憑證
+    // 動態生成 PWA 憑證，讓 Android 也能加入桌面，且圖示為您的照片
     document.addEventListener("DOMContentLoaded", () => {
       const manifest = {
         name: "Minimal Calendar",
@@ -63,6 +63,7 @@
 <body class="bg-[#f7f6f2] m-0 p-0">
   <div id="root"></div>
 
+  <!-- React 應用程式核心 -->
   <script type="text/babel">
     const { useState, useMemo, useEffect, useRef } = React;
 
@@ -77,6 +78,7 @@
       measurementId: "G-N8CGBLE373"
     };
 
+    // 避免重複初始化
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
     }
@@ -100,7 +102,34 @@
     const getDayName = (dateStr) => { const days = ['日', '一', '二', '三', '四', '五', '六']; return '週' + days[parseDateLocal(dateStr).getDay()]; };
     const checkIsOverdue = (task, todayStr) => { if (task.completed) return false; if (task.type === 'daily') return task.date < todayStr; if (task.type === 'weekly') return task.date < getStartOfWeek(todayStr); return false; };
 
-    // --- 左滑互動組件 (任務與章節) ---
+    // --- 完美頭像渲染元件 (保證即時同步且不會殘留隱藏樣式) ---
+    const AvatarImage = ({ src }) => {
+      const [imgError, setImgError] = useState(false);
+
+      useEffect(() => {
+        // 當 src 改變時，重置錯誤狀態，重新嘗試載入圖片
+        setImgError(false);
+      }, [src]);
+
+      if (!src || imgError) {
+        return (
+          <div className="w-full h-full flex items-center justify-center bg-[#f0f2f1]">
+            <i className={`fas fa-user text-lg ${theme.textMuted}`}></i>
+          </div>
+        );
+      }
+
+      return (
+        <img 
+          src={src} 
+          alt="avatar" 
+          className="w-full h-full object-cover" 
+          onError={() => setImgError(true)} 
+        />
+      );
+    };
+
+    // --- 左滑互動組件 (任務與章節專用) ---
     const SwipeableItem = ({ task, onToggle, onEdit, onDelete, isOverdue, isOpen, onOpen, onClose, hideCheck = false }) => {
       const [translateX, setTranslateX] = useState(0);
       const [isDragging, setIsDragging] = useState(false);
@@ -177,7 +206,7 @@
       );
     };
 
-    // --- 左滑互動組件 (備忘錄與倒數日專用) ---
+    // --- 左滑互動組件 (備忘錄與倒數日共用) ---
     const SwipeableGenericItem = ({ item, onEdit, onDelete, isOpen, onOpen, onClose, children }) => {
       const [translateX, setTranslateX] = useState(0);
       const [isDragging, setIsDragging] = useState(false);
@@ -209,8 +238,8 @@
       return (
         <div className="relative group overflow-hidden bg-white mb-3 rounded-2xl">
           <div className="absolute right-0 top-0 bottom-0 flex h-full rounded-2xl overflow-hidden">
-            <button onClick={(e) => { e.stopPropagation(); onClose(); onEdit(item); }} className="w-[50px] bg-[#d3dbd8] hover:bg-[#c2cbc8] text-[#5c5d5a] flex flex-col justify-center items-center"><i className="fas fa-pen text-base"></i></button>
-            <button onClick={(e) => { e.stopPropagation(); onClose(); onDelete(item.id); }} className="w-[50px] bg-[#e3d1cf] hover:bg-[#d4bebb] text-[#8c6b66] flex flex-col justify-center items-center"><i className="fas fa-trash text-base"></i></button>
+            <button onClick={(e) => { e.stopPropagation(); onClose(); onEdit(item); }} className="w-[50px] bg-[#d3dbd8] hover:bg-[#c2cbc8] text-[#5c5d5a] flex flex-col justify-center items-center transition-colors"><i className="fas fa-pen text-base"></i></button>
+            <button onClick={(e) => { e.stopPropagation(); onClose(); onDelete(item.id); }} className="w-[50px] bg-[#e3d1cf] hover:bg-[#d4bebb] text-[#8c6b66] flex flex-col justify-center items-center transition-colors"><i className="fas fa-trash text-base"></i></button>
           </div>
           <div
             className="relative z-10 flex flex-col p-4 bg-white transition-transform h-full cursor-pointer shadow-sm border border-[#ebeae5] rounded-2xl"
@@ -332,7 +361,7 @@
         } catch (err) { 
           if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') setAuthError('帳號或密碼錯誤');
           else if (err.code === 'auth/email-already-in-use') setAuthError('此信箱已被註冊');
-          else setAuthError('發生錯誤：請確認Firebase Authentication權限已開啟'); 
+          else setAuthError('發生錯誤：請確認Firebase Authentication已開啟'); 
         }
       };
 
@@ -463,19 +492,66 @@
         );
       }
 
+      // 安全分離備忘錄與倒數日的排序，確保不會造成崩潰
+      const renderMemo = () => {
+        const sortedMemos = [...memos].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        return (
+          <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
+            <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>備忘錄</h2></div>
+            <div className={`mb-8 p-5 ${theme.card} rounded-2xl border ${theme.border} shadow-sm focus-within:border-[#9ba8a2] transition-colors`}>
+              <textarea ref={memoInputRef} value={memoInput} onChange={(e) => setMemoInput(e.target.value)} placeholder="想到什麼，就寫下來吧..." className={`w-full bg-transparent resize-none outline-none text-[15px] leading-relaxed ${theme.textMain} placeholder:text-[#cccbcb] min-h-[100px]`} />
+              <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-dashed border-[#ebeae5]">
+                {editingMemoId && <button onClick={() => { setEditingMemoId(null); setMemoInput(''); }} className={`px-4 py-2 text-[#a3a6a1] text-[12px] tracking-widest font-medium rounded-xl hover:bg-gray-50 transition-colors`}>取消</button>}
+                <button onClick={handleSaveMemo} className={`px-6 py-2 ${theme.primary} text-white text-[12px] tracking-widest font-medium rounded-xl ${theme.primaryHover} transition-colors`}>{editingMemoId ? '更 新' : '儲 存'}</button>
+              </div>
+            </div>
+            <div className={`bg-white rounded-2xl border ${theme.border} py-2 px-2 shadow-sm`}>
+              {sortedMemos.map((memo, index) => (
+                <div key={memo.id}>
+                  <SwipeableGenericItem item={memo} onEdit={handleEditMemo} onDelete={handleDeleteMemo} isOpen={openSwipeId === memo.id} onOpen={() => setOpenSwipeId(memo.id)} onClose={() => setOpenSwipeId(null)}>
+                    <p className={`text-[15px] leading-loose tracking-wide ${theme.textMain} whitespace-pre-wrap`}>{memo.content}</p>
+                    <div className="flex items-center justify-end mt-3"><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>{formatTimestamp(memo.createdAt)}</span></div>
+                  </SwipeableGenericItem>
+                  {index < sortedMemos.length - 1 && <hr className={`border-t border-dashed ${theme.border} my-1 mx-2`} />}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      };
+
+      const renderCountdowns = () => {
+        const sortedCountdowns = [...countdowns].sort((a,b) => new Date(a.date) - new Date(b.date));
+        return (
+          <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
+            <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>倒數日</h2><button onClick={() => openCountdownModal()} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} tracking-wide`}><i className="fas fa-plus"></i> 新增</button></div>
+            <div className="space-y-3">
+              {sortedCountdowns.map(cd => {
+                const days = calculateDays(cd.date);
+                return (
+                  <SwipeableGenericItem key={cd.id} item={cd} onEdit={() => openCountdownModal(cd)} onDelete={handleDeleteCountdown} isOpen={openSwipeId === cd.id} onOpen={() => setOpenSwipeId(cd.id)} onClose={() => setOpenSwipeId(null)}>
+                    <div className="flex items-center justify-between">
+                      <div><h3 className={`text-[15px] font-medium tracking-wide ${theme.textMain} mb-1`}>{cd.title}</h3><p className={`text-[12px] tracking-wider ${theme.textMuted}`}>{cd.date.replace(/-/g, '.')}</p></div>
+                      <div className="text-right">
+                        {days === 0 ? <span className={`text-xl font-medium ${theme.primaryText} tracking-widest`}>TODAY</span> : (
+                          <div className="flex items-baseline gap-1"><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>{days < 0 ? '已過' : '剩餘'}</span><span className={`text-2xl font-medium ${days < 0 ? theme.textMuted : theme.primaryText}`}>{Math.abs(days)}</span><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>天</span></div>
+                        )}
+                      </div>
+                    </div>
+                  </SwipeableGenericItem>
+                );
+              })}
+            </div>
+          </div>
+        );
+      };
+
       return (
         <div className={`min-h-screen ${theme.bg} font-sans flex flex-col pb-24 md:pb-0`} onClick={() => setOpenSwipeId(null)}>
           <header className={`sticky top-0 z-30 bg-[#f7f6f2]/90 backdrop-blur-md px-6 py-5 flex items-center justify-between`}>
             <div className={`text-lg font-medium tracking-widest ${theme.textMain} flex items-center gap-2`}>MINIMAL<span className="text-[10px] text-[#a3a6a1]">CALENDAR</span></div>
-            <div className={`w-10 h-10 rounded-full ${theme.card} border ${theme.border} flex items-center justify-center overflow-hidden shadow-sm cursor-pointer hover:border-[#9ba8a2] transition-colors relative z-0`} onClick={() => setCurrentTab('profile')}>
-              {profile.avatar ? (
-                <img src={profile.avatar} alt="avatar" className="w-full h-full object-cover relative z-10" />
-              ) : (
-                <React.Fragment>
-                  <img src="./IMG_2701.jpeg" alt="avatar" className="w-full h-full object-cover relative z-10" onError={(e) => { e.target.style.display='none'; }} />
-                  <i className={`fas fa-user text-lg ${theme.textMuted} absolute inset-0 flex items-center justify-center -z-10`}></i>
-                </React.Fragment>
-              )}
+            <div className={`w-10 h-10 rounded-full cursor-pointer hover:opacity-80 transition-opacity`} onClick={() => setCurrentTab('profile')}>
+              <AvatarImage src={profile.avatar} />
             </div>
           </header>
 
@@ -546,11 +622,7 @@
                 <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>閱讀清單</h2><button onClick={() => setIsBookModalOpen(true)} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} transition-colors tracking-wide`}><i className="fas fa-plus"></i> 新增書籍</button></div>
                 <div className="space-y-4">
                   {books.map(book => {
-                    // ★★★ 在此處修改排序邏輯：依照 startPage 從小排到大 ★★★
-                    const bookChapters = chapters
-                      .filter(c => c.bookId === book.id)
-                      .sort((a,b) => (parseInt(a.startPage) || 0) - (parseInt(b.startPage) || 0)); 
-                      
+                    const bookChapters = [...chapters.filter(c => c.bookId === book.id)].sort((a,b) => (parseInt(a.startPage) || 0) - (parseInt(b.startPage) || 0)); 
                     const isExpanded = expandedBookId === book.id;
                     return (
                       <div key={book.id} className={`rounded-2xl ${theme.card} border ${isExpanded ? 'border-[#9ba8a2] shadow-sm' : theme.border} overflow-hidden`}>
@@ -592,63 +664,19 @@
               </div>
             )}
 
-            {currentTab === 'memo' && (
-              <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
-                <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>備忘錄</h2></div>
-                <div className={`mb-8 p-5 ${theme.card} rounded-2xl border ${theme.border} shadow-sm focus-within:border-[#9ba8a2] transition-colors`}>
-                  <textarea ref={memoInputRef} value={memoInput} onChange={(e) => setMemoInput(e.target.value)} placeholder="想到什麼，就寫下來吧..." className={`w-full bg-transparent resize-none outline-none text-[15px] leading-relaxed ${theme.textMain} placeholder:text-[#cccbcb] min-h-[100px]`} />
-                  <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-dashed border-[#ebeae5]">
-                    {editingMemoId && <button onClick={() => { setEditingMemoId(null); setMemoInput(''); }} className={`px-4 py-2 text-[#a3a6a1] text-[12px] tracking-widest font-medium rounded-xl hover:bg-gray-50 transition-colors`}>取消</button>}
-                    <button onClick={handleSaveMemo} className={`px-6 py-2 ${theme.primary} text-white text-[12px] tracking-widest font-medium rounded-xl ${theme.primaryHover} transition-colors`}>{editingMemoId ? '更 新' : '儲 存'}</button>
-                  </div>
-                </div>
-                <div className={`bg-white rounded-2xl border ${theme.border} py-2 px-2 shadow-sm`}>
-                  {memos.sort((a,b) => b.createdAt - a.createdAt).map((memo, index) => (
-                    <React.Fragment key={memo.id}>
-                      <SwipeableMemoItem memo={memo} onEdit={handleEditMemo} onDelete={handleDeleteMemo} isOpen={openSwipeId === memo.id} onOpen={() => setOpenSwipeId(memo.id)} onClose={() => setOpenSwipeId(null)} />
-                      {index < memos.length - 1 && <hr className={`border-t border-dashed ${theme.border} my-1 mx-2`} />}
-                    </React.Fragment>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {currentTab === 'countdown' && (
-              <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
-                <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>倒數日</h2><button onClick={() => { setIsCountdownModalOpen(true); setCdTitle(''); setCdDate(todayStr); }} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} tracking-wide`}><i className="fas fa-plus"></i> 新增</button></div>
-                <div className="space-y-3">
-                  {countdowns.sort((a,b) => new Date(a.date) - new Date(b.date)).map(cd => {
-                    const days = calculateDays(cd.date);
-                    return (
-                      <SwipeableGenericItem key={cd.id} item={cd} onEdit={() => openCountdownModal(cd)} onDelete={handleDeleteCountdown} isOpen={openSwipeId === cd.id} onOpen={() => setOpenSwipeId(cd.id)} onClose={() => setOpenSwipeId(null)}>
-                        <div className="flex items-center justify-between">
-                          <div><h3 className={`text-[15px] font-medium tracking-wide ${theme.textMain} mb-1`}>{cd.title}</h3><p className={`text-[12px] tracking-wider ${theme.textMuted}`}>{cd.date.replace(/-/g, '.')}</p></div>
-                          <div className="text-right">
-                            {days === 0 ? <span className={`text-xl font-medium ${theme.primaryText} tracking-widest`}>TODAY</span> : (
-                              <div className="flex items-baseline gap-1"><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>{days < 0 ? '已過' : '剩餘'}</span><span className={`text-2xl font-medium ${days < 0 ? theme.textMuted : theme.primaryText}`}>{Math.abs(days)}</span><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>天</span></div>
-                            )}
-                          </div>
-                        </div>
-                      </SwipeableGenericItem>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            {currentTab === 'memo' && renderMemo()}
+            {currentTab === 'countdown' && renderCountdowns()}
 
             {currentTab === 'profile' && (
               <div className="max-w-md mx-auto mt-6 animate-in fade-in duration-300">
                 <div className={`p-8 rounded-3xl ${theme.card} border ${theme.border} shadow-sm`}>
                   {!isEditingProfile ? (
                     <>
-                      <div className="flex justify-center mb-4"><div className={`w-24 h-24 rounded-full ${theme.bg} border ${theme.border} flex items-center justify-center overflow-hidden relative z-0`}>
-                        {profile.avatar ? <img src={profile.avatar} alt="avatar" className="w-full h-full object-cover relative z-10" /> : (
-                          <React.Fragment>
-                            <img src="./IMG_2701.jpeg" alt="avatar" className="w-full h-full object-cover relative z-10" onError={(e) => { e.target.style.display='none'; }} />
-                            <i className={`fas fa-user text-3xl ${theme.textMuted} absolute inset-0 flex items-center justify-center -z-10`}></i>
-                          </React.Fragment>
-                        )}
-                      </div></div>
+                      <div className="flex justify-center mb-4">
+                        <div className="w-24 h-24">
+                          <AvatarImage src={profile.avatar} />
+                        </div>
+                      </div>
                       <div className="text-center space-y-4">
                         <h2 className={`text-xl font-medium ${theme.textMain} tracking-wider`}>{profile.nickname}</h2><p className={`text-[11px] ${theme.textMuted}`}>{currentUserEmail}</p><p className={`text-sm ${theme.textMuted} pt-2`}>{profile.bio}</p>
                         <div className="pt-6 flex gap-3 justify-center"><button onClick={() => setIsEditingProfile(true)} className={`px-6 py-2 rounded-full border ${theme.border} text-sm ${theme.textMain}`}>編輯</button><button onClick={handleLogout} className={`px-6 py-2 rounded-full border border-[#e3d1cf] text-sm text-[#c29b95]`}>登出</button></div>
@@ -658,14 +686,13 @@
                     <div className="space-y-6">
                       <div className="text-center mb-6">
                         <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-3`}>更換照片 (PHOTO)</label>
-                        <div className="flex justify-center"><div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}><div className={`w-20 h-20 rounded-full ${theme.bg} border ${theme.border} flex items-center justify-center overflow-hidden relative z-0`}>
-                          {editProfileData.avatar ? <img src={editProfileData.avatar} alt="avatar" className="w-full h-full object-cover relative z-10" /> : (
-                            <React.Fragment>
-                              <img src="./IMG_2701.jpeg" alt="avatar" className="w-full h-full object-cover relative z-10" onError={(e) => { e.target.style.display='none'; }} />
-                              <i className={`fas fa-user text-2xl ${theme.textMuted} absolute inset-0 flex items-center justify-center -z-10`}></i>
-                            </React.Fragment>
-                          )}
-                        </div><div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 z-20"><i className="fas fa-camera text-white text-xl"></i></div><input type="file" className="hidden" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" /></div></div>
+                        <div className="flex justify-center">
+                          <div className="relative group cursor-pointer w-20 h-20" onClick={() => fileInputRef.current?.click()}>
+                            <AvatarImage src={editProfileData.avatar} />
+                            <div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 z-20"><i className="fas fa-camera text-white text-xl"></i></div>
+                            <input type="file" className="hidden" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" />
+                          </div>
+                        </div>
                       </div>
                       <div><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>NICKNAME</label><input type="text" value={editProfileData.nickname} onChange={e => setEditProfileData({...editProfileData, nickname: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} /></div>
                       <div><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>BIO</label><textarea value={editProfileData.bio} onChange={e => setEditProfileData({...editProfileData, bio: e.target.value})} rows="3" className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl resize-none`} /></div>
@@ -758,6 +785,5 @@
   </script>
 </body>
 </html>
-
 
 
