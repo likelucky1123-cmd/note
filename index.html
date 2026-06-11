@@ -45,6 +45,7 @@
   </style>
 
   <script>
+    // 動態生成 PWA 憑證
     document.addEventListener("DOMContentLoaded", () => {
       const manifest = {
         name: "Minimal Calendar",
@@ -65,10 +66,11 @@
 <body class="bg-[#f7f6f2] m-0 p-0">
   <div id="root"></div>
 
+  <!-- React 應用程式核心 -->
   <script type="text/babel">
     const { useState, useMemo, useEffect, useRef } = React;
 
-    // --- Firebase 初始化 (您的專屬金鑰) ---
+    // --- Firebase 初始化 ---
     const firebaseConfig = {
       apiKey: "AIzaSyDKVLVYRGvsiuFmQIXuFCU9O2TBVVRb3gk",
       authDomain: "popcorn-ee2cc.firebaseapp.com",
@@ -93,7 +95,6 @@
       border: 'border-[#ebeae5]', accent: 'text-[#c29b95]', accentBg: 'bg-[#f5eeed]',
     };
 
-    // 折線圖專用配色
     const chartColors = ['#c29b95', '#9ba8a2', '#8ca1a5', '#d4bebb', '#a3a6a1', '#e0c8b6', '#b7a9a4', '#d8c5b7'];
 
     // --- 日期輔助函數 ---
@@ -133,19 +134,14 @@
 
         const isAll = currentSubject === '所有科目成績總覽';
         let filteredGrades = isAll ? grades : grades.filter(g => g.subject === currentSubject);
-        // 依據日期由舊到新排序
-        filteredGrades = [...filteredGrades].sort((a, b) => new Date(a.date) - new Date(b.date));
+        const sortedGrades = [...filteredGrades].sort((a, b) => new Date(a.date) - new Date(b.date));
+        const uniqueExamNames = Array.from(new Set(sortedGrades.map(g => g.examName)));
 
-        // 提取所有唯一日期作為 X 軸標籤 (若同一天有多個考試，以考試名稱+日期顯示更佳，為簡潔這裡以日期代表)
-        const labels = Array.from(new Set(filteredGrades.map(g => `${g.examName} (${g.date.substring(5).replace('-','/')})`)));
-        const rawLabels = Array.from(new Set(filteredGrades.map(g => g.id))); // 用 ID 對齊精確點
-
-        const subjects = isAll ? Array.from(new Set(filteredGrades.map(g => g.subject))) : [currentSubject];
+        const subjects = isAll ? Array.from(new Set(sortedGrades.map(g => g.subject))) : [currentSubject];
         const datasets = subjects.map((subj, i) => {
-          const subjGrades = filteredGrades.filter(g => g.subject === subj);
-          // 對齊資料點
-          const data = rawLabels.map(labelId => {
-            const record = subjGrades.find(g => g.id === labelId);
+          const subjGrades = sortedGrades.filter(g => g.subject === subj);
+          const data = uniqueExamNames.map(exam => {
+            const record = subjGrades.find(g => g.examName === exam);
             return record ? Number(record.score) : null;
           });
           
@@ -155,7 +151,7 @@
             borderColor: chartColors[i % chartColors.length],
             backgroundColor: chartColors[i % chartColors.length],
             tension: 0.3,
-            spanGaps: true, // 允許斷點連線
+            spanGaps: true, 
             pointBackgroundColor: '#fff',
             pointBorderWidth: 2,
             pointRadius: 4,
@@ -163,16 +159,10 @@
           };
         });
 
-        // 重新組合更乾淨的 labels (對應 rawLabels)
-        const finalLabels = rawLabels.map(id => {
-           const rec = filteredGrades.find(g => g.id === id);
-           return rec ? `${rec.examName}` : '';
-        });
-
         const ctx = chartRef.current.getContext('2d');
         chartInstanceRef.current = new window.Chart(ctx, {
           type: 'line',
-          data: { labels: finalLabels, datasets },
+          data: { labels: uniqueExamNames, datasets },
           options: {
             responsive: true,
             maintainAspectRatio: false,
@@ -211,12 +201,10 @@
         };
       }, [grades, currentSubject]);
 
-      // 動態計算寬度以支援左右滑動
       const isAll = currentSubject === '所有科目成績總覽';
       const filteredGrades = isAll ? grades : grades.filter(g => g.subject === currentSubject);
-      const dataPointsCount = filteredGrades.length;
-      // 每個資料點大約給 60px 寬度，最小 100%
-      const wrapperWidth = Math.max(window.innerWidth - 64, dataPointsCount * 60);
+      const uniqueExamNamesCount = new Set(filteredGrades.map(g => g.examName)).size;
+      const wrapperWidth = Math.max(window.innerWidth - 64, uniqueExamNamesCount * 60);
 
       return (
         <div className="w-full overflow-x-auto custom-scrollbar bg-white rounded-2xl border border-[#ebeae5] p-4 shadow-sm mb-6">
@@ -266,7 +254,6 @@
               <i className="fas fa-trash text-base"></i>
             </button>
           </div>
-          {/* 已完成任務維持白底，僅透明度變化移除 */}
           <div
             className={`relative z-10 flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-transform h-full ${task.completed ? 'bg-white border border-[#ebeae5]' : theme.card}`}
             style={{ transform: `translateX(${translateX}px)`, transition: isDragging ? 'none' : 'transform 0.2s ease-out' }}
@@ -349,7 +336,7 @@
       
       const [currentTab, setCurrentTab] = useState('tasks'); 
       const [viewMode, setViewMode] = useState('week'); 
-      const [readingSubTab, setReadingSubTab] = useState('list'); // 記憶閱讀子分頁
+      const [readingSubTab, setReadingSubTab] = useState('list'); 
       
       const [isLoginMode, setIsLoginMode] = useState(true);
       const [authEmail, setAuthEmail] = useState('');
@@ -413,7 +400,7 @@
       const [editProfileData, setEditProfileData] = useState({ nickname: '', bio: '', avatar: '' });
       const fileInputRef = useRef(null);
 
-      // --- 防呆彈窗狀態 ---
+      // 防呆彈窗狀態
       const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
       const [pendingDeleteAction, setPendingDeleteAction] = useState(null);
 
@@ -458,15 +445,12 @@
         return () => { unsubTasks(); unsubCd(); unsubBooks(); unsubChapters(); unsubMemos(); unsubRecords(); unsubGrades(); };
       }, [realUser, isAppUnlocked, currentUserEmail]);
 
-      // 點擊外部關閉下拉選單
       useEffect(() => {
         const handleClickOutside = (e) => { if (isSubjectMenuOpen && !e.target.closest('#subject-menu-container')) setIsSubjectMenuOpen(false); };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
       }, [isSubjectMenuOpen]);
 
-
-      // --- 原生 Firebase 登入 ---
       const handleAuthSubmit = async (e) => {
         e.preventDefault(); setAuthError(''); setAuthSuccessMsg('');
         try {
@@ -488,7 +472,7 @@
 
       const handleLogout = () => { auth.signOut(); setCurrentTab('tasks'); setViewMode('week'); setReadingSubTab('list'); setCurrentSubject('所有科目成績總覽'); };
 
-      // --- 刪除防呆機制觸發 ---
+      // --- 防呆處理 ---
       const triggerConfirmDelete = (deleteFn) => {
         setPendingDeleteAction(() => deleteFn);
         setIsConfirmModalOpen(true);
@@ -533,6 +517,7 @@
       const handleDeleteMemo = (id) => triggerConfirmDelete(async () => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('memos').doc(id).delete());
 
       // --- Countdown ---
+      const calculateDays = (targetDateStr) => Math.ceil((new Date(targetDateStr) - new Date(todayStr)) / (1000 * 60 * 60 * 24));
       const openCountdownModal = (cd = null) => {
         if (cd) { setCdTitle(cd.title); setCdDate(cd.date); setEditingCountdownId(cd.id); }
         else { setCdTitle(''); setCdDate(todayStr); setEditingCountdownId(null); }
@@ -548,8 +533,7 @@
         setIsCountdownModalOpen(false); setCdTitle(''); setEditingCountdownId(null);
       };
       const handleDeleteCountdown = (id) => triggerConfirmDelete(async () => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('countdowns').doc(id).delete());
-      const calculateDays = (targetDateStr) => Math.ceil((new Date(targetDateStr) - new Date(todayStr)) / (1000 * 60 * 60 * 24));
-
+      
       // --- Grades ---
       const openGradeModal = (grade = null) => {
         if (grade) { setGradeForm({ subject: grade.subject, examName: grade.examName, score: grade.score, date: grade.date }); setEditingGradeId(grade.id); }
@@ -563,7 +547,6 @@
         if (editingGradeId) await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('grades').doc(editingGradeId).set(data, { merge: true });
         else await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('grades').doc(Date.now().toString()).set({ ...data, createdAt: Date.now() });
         setIsGradeModalOpen(false);
-        // 如果新增了不在當前列表的新科目，且當下不是總覽，則自動切過去 (可選)
       };
       const handleDeleteGrade = (id) => triggerConfirmDelete(async () => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('grades').doc(id).delete());
 
@@ -657,24 +640,21 @@
         );
       }
 
-      // --- 渲染成績區塊 ---
+      // --- 成績區塊 ---
       const renderGrades = () => {
         const uniqueSubjects = ['所有科目成績總覽', ...Array.from(new Set(grades.map(g => g.subject)))];
         const isAll = currentSubject === '所有科目成績總覽';
         let displayGrades = isAll ? grades : grades.filter(g => g.subject === currentSubject);
-        displayGrades = [...displayGrades].sort((a,b) => new Date(b.date) - new Date(a.date)); // 列表以時間新到舊排序
+        displayGrades = [...displayGrades].sort((a,b) => new Date(b.date) - new Date(a.date)); 
 
         return (
           <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
-            {/* 標題與選單列 */}
             <div className="flex items-center justify-between mb-8 px-2 relative" id="subject-menu-container">
               <div className="flex items-center gap-3 relative">
                 <button onClick={() => setIsSubjectMenuOpen(!isSubjectMenuOpen)} className={`text-lg ${theme.textMuted} hover:${theme.primaryText} transition-colors p-1`} title="切換科目">
                   <i className="fas fa-bars"></i>
                 </button>
                 <h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>{currentSubject}</h2>
-                
-                {/* 下拉選單 */}
                 {isSubjectMenuOpen && (
                   <div className="absolute top-10 left-0 w-56 bg-white border border-[#ebeae5] shadow-lg rounded-2xl py-2 z-50 animate-in slide-in-from-top-2 duration-200">
                     {uniqueSubjects.map((subj, idx) => (
@@ -694,7 +674,6 @@
               </button>
             </div>
 
-            {/* 圖表區塊 */}
             {grades.length > 0 ? (
               <GradeChart grades={grades} currentSubject={currentSubject} />
             ) : (
@@ -703,7 +682,6 @@
               </div>
             )}
 
-            {/* 列表區塊 */}
             <div className="space-y-3">
               {displayGrades.map(grade => (
                 <SwipeableGenericItem key={grade.id} item={grade} onEdit={() => openGradeModal(grade)} onDelete={handleDeleteGrade} isOpen={openSwipeId === grade.id} onOpen={() => setOpenSwipeId(grade.id)} onClose={() => setOpenSwipeId(null)}>
@@ -890,10 +868,14 @@
                   </div>
                 </div>
                 <div className={`bg-white rounded-2xl border ${theme.border} py-2 px-2 shadow-sm`}>
-                  {/* 使用陣列拷貝防止 React 原地修改狀態崩潰 */}
                   {[...memos].sort((a,b) => (b.createdAt || 0) - (a.createdAt || 0)).map((memo, index, arr) => (
                     <React.Fragment key={memo.id}>
-                      <SwipeableMemoItem memo={memo} onEdit={handleEditMemo} onDelete={handleDeleteMemo} isOpen={openSwipeId === memo.id} onOpen={() => setOpenSwipeId(memo.id)} onClose={() => setOpenSwipeId(null)} />
+                      <SwipeableGenericItem item={memo} onEdit={handleEditMemo} onDelete={handleDeleteMemo} isOpen={openSwipeId === memo.id} onOpen={() => setOpenSwipeId(memo.id)} onClose={() => setOpenSwipeId(null)}>
+                        <div className="w-full flex flex-col">
+                          <p className={`text-[15px] leading-loose tracking-wide ${theme.textMain} whitespace-pre-wrap`}>{memo.content}</p>
+                          <div className="flex items-center justify-end mt-3"><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>{formatTimestamp(memo.createdAt)}</span></div>
+                        </div>
+                      </SwipeableGenericItem>
                       {index < arr.length - 1 && <hr className={`border-t border-dashed ${theme.border} my-1 mx-2`} />}
                     </React.Fragment>
                   ))}
@@ -905,16 +887,25 @@
               <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
                 <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>倒數日</h2><button onClick={() => openCountdownModal()} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} tracking-wide`}><i className="fas fa-plus"></i> 新增</button></div>
                 <div className="space-y-3">
-                  {/* 使用陣列拷貝防止崩潰 */}
-                  {[...countdowns].sort((a,b) => new Date(a.date) - new Date(b.date)).map(cd => {
+                  {/* ★★★ 已過期放下面，且透明度變淡 ★★★ */}
+                  {[...countdowns].sort((a,b) => {
+                    const daysA = calculateDays(a.date);
+                    const daysB = calculateDays(b.date);
+                    if (daysA >= 0 && daysB < 0) return -1;
+                    if (daysA < 0 && daysB >= 0) return 1;
+                    if (daysA < 0 && daysB < 0) return new Date(b.date) - new Date(a.date);
+                    return new Date(a.date) - new Date(b.date);
+                  }).map(cd => {
                     const days = calculateDays(cd.date);
+                    const isExpired = days < 0;
                     return (
                       <SwipeableGenericItem key={cd.id} item={cd} onEdit={() => openCountdownModal(cd)} onDelete={handleDeleteCountdown} isOpen={openSwipeId === cd.id} onOpen={() => setOpenSwipeId(cd.id)} onClose={() => setOpenSwipeId(null)}>
-                        <div className="flex items-center justify-between w-full">
-                          <div><h3 className={`text-[15px] font-medium tracking-wide ${theme.textMain} mb-1`}>{cd.title}</h3><p className={`text-[12px] tracking-wider ${theme.textMuted}`}>{cd.date.replace(/-/g, '.')}</p></div>
+                        {/* 這裡加入 isExpired 的灰階淡化效果 */}
+                        <div className={`flex items-center justify-between w-full ${isExpired ? 'opacity-50 grayscale' : ''}`}>
+                          <div><h3 className={`text-[15px] font-medium tracking-wide ${isExpired ? theme.textMuted : theme.textMain} mb-1`}>{cd.title}</h3><p className={`text-[12px] tracking-wider ${theme.textMuted}`}>{cd.date.replace(/-/g, '.')}</p></div>
                           <div className="text-right">
                             {days === 0 ? <span className={`text-xl font-medium ${theme.primaryText} tracking-widest`}>TODAY</span> : (
-                              <div className="flex items-baseline gap-1"><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>{days < 0 ? '已過' : '剩餘'}</span><span className={`text-2xl font-medium ${days < 0 ? theme.textMuted : theme.primaryText}`}>{Math.abs(days)}</span><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>天</span></div>
+                              <div className="flex items-baseline gap-1"><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>{isExpired ? '已過' : '剩餘'}</span><span className={`text-2xl font-medium ${isExpired ? theme.textMuted : theme.primaryText}`}>{Math.abs(days)}</span><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>天</span></div>
                             )}
                           </div>
                         </div>
@@ -967,7 +958,7 @@
               {[
                 { id: 'tasks', icon: 'fa-calendar-alt', label: '任務' },
                 { id: 'reading', icon: 'fa-book-open', label: '閱讀' },
-                { id: 'grades', icon: 'fa-chart-line', label: '成績' }, /* 新增成績選單 */
+                { id: 'grades', icon: 'fa-chart-line', label: '成績' },
                 { id: 'memo', icon: 'fa-file-alt', label: '備忘' },
                 { id: 'countdown', icon: 'fa-clock', label: '倒數' }
               ].map(tab => (
@@ -1007,7 +998,6 @@
             </div>
           )}
 
-          {/* grades modal */}
           {isGradeModalOpen && (
             <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
               <div className={`${theme.card} w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6 max-h-[90vh] overflow-y-auto custom-scrollbar`}>
@@ -1124,5 +1114,4 @@
   </script>
 </body>
 </html>
-
 
