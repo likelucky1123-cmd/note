@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   
-  <!-- 設定您的專屬圖片為手機桌面 App 的圖示 -->
+  <!-- 設定您的專屬圖片為手機桌面 Icon -->
   <link rel="icon" href="./IMG_2701.jpeg">
   <link rel="apple-touch-icon" href="./IMG_2701.jpeg">
   
@@ -19,7 +19,7 @@
   <!-- 1. 載入 Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- 2. 載入 FontAwesome 圖標庫 (用於 App 內部的極簡圖標) -->
+  <!-- 2. 載入 FontAwesome 圖標庫 -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
   <!-- 3. 載入 React 核心 -->
@@ -32,9 +32,12 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
+  <!-- 5. 載入 Chart.js 用於繪製成績折線圖 -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
     /* 莫蘭迪風格捲軸 */
-    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #d3dbd8; border-radius: 10px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #9ba8a2; }
@@ -42,7 +45,6 @@
   </style>
 
   <script>
-    // 動態生成 PWA 憑證，讓 Android 也能加入桌面，且圖示為您的照片
     document.addEventListener("DOMContentLoaded", () => {
       const manifest = {
         name: "Minimal Calendar",
@@ -63,7 +65,6 @@
 <body class="bg-[#f7f6f2] m-0 p-0">
   <div id="root"></div>
 
-  <!-- React 應用程式核心 -->
   <script type="text/babel">
     const { useState, useMemo, useEffect, useRef } = React;
 
@@ -78,7 +79,6 @@
       measurementId: "G-N8CGBLE373"
     };
 
-    // 避免重複初始化
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
     }
@@ -93,6 +93,9 @@
       border: 'border-[#ebeae5]', accent: 'text-[#c29b95]', accentBg: 'bg-[#f5eeed]',
     };
 
+    // 折線圖專用配色
+    const chartColors = ['#c29b95', '#9ba8a2', '#8ca1a5', '#d4bebb', '#a3a6a1', '#e0c8b6', '#b7a9a4', '#d8c5b7'];
+
     // --- 日期輔助函數 ---
     const parseDateLocal = (dateStr) => { if (!dateStr) return new Date(); const [y, m, d] = dateStr.split('-'); return new Date(y, m - 1, d); };
     const formatDate = (date) => { const y = date.getFullYear(); const m = String(date.getMonth() + 1).padStart(2, '0'); const d = String(date.getDate()).padStart(2, '0'); return `${y}-${m}-${d}`; };
@@ -102,34 +105,129 @@
     const getDayName = (dateStr) => { const days = ['日', '一', '二', '三', '四', '五', '六']; return '週' + days[parseDateLocal(dateStr).getDay()]; };
     const checkIsOverdue = (task, todayStr) => { if (task.completed) return false; if (task.type === 'daily') return task.date < todayStr; if (task.type === 'weekly') return task.date < getStartOfWeek(todayStr); return false; };
 
-    // --- 完美頭像渲染元件 (保證即時同步且不會殘留隱藏樣式) ---
+    // --- 完美頭像渲染元件 ---
     const AvatarImage = ({ src }) => {
       const [imgError, setImgError] = useState(false);
-
-      useEffect(() => {
-        // 當 src 改變時，重置錯誤狀態，重新嘗試載入圖片
-        setImgError(false);
-      }, [src]);
+      useEffect(() => { setImgError(false); }, [src]);
 
       if (!src || imgError) {
         return (
           <div className="w-full h-full flex items-center justify-center bg-[#f0f2f1]">
-            <i className={`fas fa-user text-lg ${theme.textMuted}`}></i>
+            <i className={`fas fa-user text-xl ${theme.textMuted}`}></i>
           </div>
         );
       }
+      return <img src={src} alt="avatar" className="w-full h-full object-cover" onError={() => setImgError(true)} />;
+    };
+
+    // --- 成績折線圖元件 ---
+    const GradeChart = ({ grades, currentSubject }) => {
+      const chartRef = useRef(null);
+      const chartInstanceRef = useRef(null);
+
+      useEffect(() => {
+        if (!chartRef.current) return;
+        if (chartInstanceRef.current) {
+          chartInstanceRef.current.destroy();
+        }
+
+        const isAll = currentSubject === '所有科目成績總覽';
+        let filteredGrades = isAll ? grades : grades.filter(g => g.subject === currentSubject);
+        // 依據日期由舊到新排序
+        filteredGrades = [...filteredGrades].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        // 提取所有唯一日期作為 X 軸標籤 (若同一天有多個考試，以考試名稱+日期顯示更佳，為簡潔這裡以日期代表)
+        const labels = Array.from(new Set(filteredGrades.map(g => `${g.examName} (${g.date.substring(5).replace('-','/')})`)));
+        const rawLabels = Array.from(new Set(filteredGrades.map(g => g.id))); // 用 ID 對齊精確點
+
+        const subjects = isAll ? Array.from(new Set(filteredGrades.map(g => g.subject))) : [currentSubject];
+        const datasets = subjects.map((subj, i) => {
+          const subjGrades = filteredGrades.filter(g => g.subject === subj);
+          // 對齊資料點
+          const data = rawLabels.map(labelId => {
+            const record = subjGrades.find(g => g.id === labelId);
+            return record ? Number(record.score) : null;
+          });
+          
+          return {
+            label: subj,
+            data: data,
+            borderColor: chartColors[i % chartColors.length],
+            backgroundColor: chartColors[i % chartColors.length],
+            tension: 0.3,
+            spanGaps: true, // 允許斷點連線
+            pointBackgroundColor: '#fff',
+            pointBorderWidth: 2,
+            pointRadius: 4,
+            borderWidth: 2
+          };
+        });
+
+        // 重新組合更乾淨的 labels (對應 rawLabels)
+        const finalLabels = rawLabels.map(id => {
+           const rec = filteredGrades.find(g => g.id === id);
+           return rec ? `${rec.examName}` : '';
+        });
+
+        const ctx = chartRef.current.getContext('2d');
+        chartInstanceRef.current = new window.Chart(ctx, {
+          type: 'line',
+          data: { labels: finalLabels, datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { 
+                display: isAll, 
+                position: 'top', 
+                labels: { boxWidth: 12, usePointStyle: true, font: { size: 11, family: 'sans-serif' }, color: '#a3a6a1' } 
+              },
+              tooltip: {
+                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                titleColor: '#5c5d5a',
+                bodyColor: '#6a7c75',
+                borderColor: '#ebeae5',
+                borderWidth: 1,
+                padding: 10,
+                displayColors: isAll
+              }
+            },
+            scales: {
+              y: { 
+                beginAtZero: false, 
+                grid: { color: '#f0f2f1', drawBorder: false },
+                ticks: { color: '#a3a6a1', font: { size: 10 } }
+              },
+              x: { 
+                grid: { display: false },
+                ticks: { color: '#a3a6a1', font: { size: 10 }, maxRotation: 45, minRotation: 0 }
+              }
+            }
+          }
+        });
+
+        return () => {
+          if (chartInstanceRef.current) chartInstanceRef.current.destroy();
+        };
+      }, [grades, currentSubject]);
+
+      // 動態計算寬度以支援左右滑動
+      const isAll = currentSubject === '所有科目成績總覽';
+      const filteredGrades = isAll ? grades : grades.filter(g => g.subject === currentSubject);
+      const dataPointsCount = filteredGrades.length;
+      // 每個資料點大約給 60px 寬度，最小 100%
+      const wrapperWidth = Math.max(window.innerWidth - 64, dataPointsCount * 60);
 
       return (
-        <img 
-          src={src} 
-          alt="avatar" 
-          className="w-full h-full object-cover" 
-          onError={() => setImgError(true)} 
-        />
+        <div className="w-full overflow-x-auto custom-scrollbar bg-white rounded-2xl border border-[#ebeae5] p-4 shadow-sm mb-6">
+          <div style={{ width: `${wrapperWidth}px`, height: '220px', minWidth: '100%' }}>
+            <canvas ref={chartRef}></canvas>
+          </div>
+        </div>
       );
     };
 
-    // --- 左滑互動組件 (任務與章節專用) ---
+    // --- 左滑互動組件 (任務專用) ---
     const SwipeableItem = ({ task, onToggle, onEdit, onDelete, isOverdue, isOpen, onOpen, onClose, hideCheck = false }) => {
       const [translateX, setTranslateX] = useState(0);
       const [isDragging, setIsDragging] = useState(false);
@@ -168,8 +266,9 @@
               <i className="fas fa-trash text-base"></i>
             </button>
           </div>
+          {/* 已完成任務維持白底，僅透明度變化移除 */}
           <div
-            className={`relative z-10 flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-transform h-full ${task.completed ? 'bg-[#fbfaf9] opacity-70' : theme.card}`}
+            className={`relative z-10 flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-transform h-full ${task.completed ? 'bg-white border border-[#ebeae5]' : theme.card}`}
             style={{ transform: `translateX(${translateX}px)`, transition: isDragging ? 'none' : 'transform 0.2s ease-out' }}
             onTouchStart={e => handleStart(e.touches[0].clientX)} onTouchMove={e => handleMove(e.touches[0].clientX)} onTouchEnd={handleEnd}
             onMouseDown={e => handleStart(e.clientX)} onMouseMove={e => handleMove(e.clientX)} onMouseUp={handleEnd} onMouseLeave={() => { if(isDragging) handleEnd() }}
@@ -188,25 +287,13 @@
                 {task.isChapter && task.updatedAt && <span className={`text-[10px] ${theme.textMuted} tracking-wider ml-2 flex-shrink-0`}>{formatTimestamp(task.updatedAt)}</span>}
               </div>
               {isOverdue && !task.completed && <span className={`text-[11px] ${theme.accent} font-medium mt-1 tracking-wider`}>已逾期</span>}
-              {task.isChapter && (
-                <div className="mt-2">
-                   <div className="flex justify-between items-end mb-1">
-                     <span className={`text-[10px] tracking-wider ${theme.textMuted}`}>第 {task.startPage} - {task.endPage} 頁 | 當前: {task.currentPage} 頁</span>
-                     <span className={`text-[11px] font-medium tracking-widest ${task.percentage >= 100 ? theme.primaryText : theme.textMain}`}>{task.percentage}%</span>
-                   </div>
-                   <div className="h-1.5 w-full bg-[#ebeae5] rounded-full overflow-hidden">
-                     <div className={`h-full transition-all duration-500 ease-out rounded-full ${task.percentage >= 100 ? 'bg-[#9ba8a2]' : 'bg-[#6a7c75]'}`} style={{ width: `${task.percentage}%` }}/>
-                   </div>
-                   {task.notes && <p className={`mt-2 text-[12px] ${theme.textMuted} leading-relaxed bg-[#fbfaf9] p-2 rounded-lg border ${theme.border}`}>{task.notes}</p>}
-                </div>
-              )}
             </div>
           </div>
         </div>
       );
     };
 
-    // --- 左滑互動組件 (備忘錄與倒數日共用) ---
+    // --- 左滑互動組件 (備忘錄、倒數日、閱讀、成績通用) ---
     const SwipeableGenericItem = ({ item, onEdit, onDelete, isOpen, onOpen, onClose, children }) => {
       const [translateX, setTranslateX] = useState(0);
       const [isDragging, setIsDragging] = useState(false);
@@ -259,8 +346,10 @@
       const [authLoading, setAuthLoading] = useState(true);
       const [isAppUnlocked, setIsAppUnlocked] = useState(false);
       const [currentUserEmail, setCurrentUserEmail] = useState('');
+      
       const [currentTab, setCurrentTab] = useState('tasks'); 
       const [viewMode, setViewMode] = useState('week'); 
+      const [readingSubTab, setReadingSubTab] = useState('list'); // 記憶閱讀子分頁
       
       const [isLoginMode, setIsLoginMode] = useState(true);
       const [authEmail, setAuthEmail] = useState('');
@@ -269,6 +358,7 @@
       const [authError, setAuthError] = useState('');
       const [authSuccessMsg, setAuthSuccessMsg] = useState('');
 
+      // 任務
       const [tasks, setTasks] = useState([]);
       const [currentDateStr, setCurrentDateStr] = useState(formatDate(new Date())); 
       const todayStr = useMemo(() => formatDate(new Date()), []);
@@ -280,12 +370,14 @@
       const [newTaskTitle, setNewTaskTitle] = useState('');
       const [editingTaskId, setEditingTaskId] = useState(null);
 
+      // 倒數日
       const [countdowns, setCountdowns] = useState([]);
       const [isCountdownModalOpen, setIsCountdownModalOpen] = useState(false);
       const [editingCountdownId, setEditingCountdownId] = useState(null);
       const [cdTitle, setCdTitle] = useState('');
       const [cdDate, setCdDate] = useState(todayStr);
 
+      // 讀書
       const [books, setBooks] = useState([]);
       const [chapters, setChapters] = useState([]);
       const [expandedBookId, setExpandedBookId] = useState(null);
@@ -296,15 +388,34 @@
       const [targetBookIdForChapter, setTargetBookIdForChapter] = useState(null);
       const [chapterForm, setChapterForm] = useState({ title: '', startPage: '', endPage: '', currentPage: '', notes: '' });
 
+      const [readingRecords, setReadingRecords] = useState([]);
+      const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
+      const [editingRecordId, setEditingRecordId] = useState(null);
+      const [recordForm, setRecordForm] = useState({ bookTitle: '', date: todayStr, startPage: '', endPage: '', notes: '' });
+
+      // 成績
+      const [grades, setGrades] = useState([]);
+      const [currentSubject, setCurrentSubject] = useState('所有科目成績總覽');
+      const [isSubjectMenuOpen, setIsSubjectMenuOpen] = useState(false);
+      const [isGradeModalOpen, setIsGradeModalOpen] = useState(false);
+      const [editingGradeId, setEditingGradeId] = useState(null);
+      const [gradeForm, setGradeForm] = useState({ subject: '', examName: '', score: '', date: todayStr });
+
+      // 備忘錄
       const [memos, setMemos] = useState([]);
       const [memoInput, setMemoInput] = useState('');
       const [editingMemoId, setEditingMemoId] = useState(null);
       const memoInputRef = useRef(null);
 
+      // 個人檔案
       const [profile, setProfile] = useState({ nickname: '', bio: '', avatar: '' });
       const [isEditingProfile, setIsEditingProfile] = useState(false);
       const [editProfileData, setEditProfileData] = useState({ nickname: '', bio: '', avatar: '' });
       const fileInputRef = useRef(null);
+
+      // --- 防呆彈窗狀態 ---
+      const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+      const [pendingDeleteAction, setPendingDeleteAction] = useState(null);
 
       const currentWeekStart = useMemo(() => getStartOfWeek(currentDateStr), [currentDateStr]);
       const weekDays = useMemo(() => Array.from({ length: 7 }).map((_, i) => addDays(currentWeekStart, i)), [currentWeekStart]);
@@ -332,6 +443,8 @@
         const unsubBooks = userRef.collection('books').onSnapshot(s => setBooks(s.docs.map(d => ({ id: d.id, ...d.data() }))));
         const unsubChapters = userRef.collection('chapters').onSnapshot(s => setChapters(s.docs.map(d => ({ id: d.id, ...d.data() }))));
         const unsubMemos = userRef.collection('memos').onSnapshot(s => setMemos(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubRecords = userRef.collection('readingRecords').onSnapshot(s => setReadingRecords(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubGrades = userRef.collection('grades').onSnapshot(s => setGrades(s.docs.map(d => ({ id: d.id, ...d.data() }))));
 
         userRef.collection('profile').doc('info').get().then(pSnap => {
           if (pSnap.exists) {
@@ -342,8 +455,16 @@
             setProfile(defaultProfile); setEditProfileData(defaultProfile);
           }
         });
-        return () => { unsubTasks(); unsubCd(); unsubBooks(); unsubChapters(); unsubMemos(); };
+        return () => { unsubTasks(); unsubCd(); unsubBooks(); unsubChapters(); unsubMemos(); unsubRecords(); unsubGrades(); };
       }, [realUser, isAppUnlocked, currentUserEmail]);
+
+      // 點擊外部關閉下拉選單
+      useEffect(() => {
+        const handleClickOutside = (e) => { if (isSubjectMenuOpen && !e.target.closest('#subject-menu-container')) setIsSubjectMenuOpen(false); };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+      }, [isSubjectMenuOpen]);
+
 
       // --- 原生 Firebase 登入 ---
       const handleAuthSubmit = async (e) => {
@@ -359,17 +480,28 @@
             await auth.signOut(); setIsLoginMode(true); setAuthPassword(''); setAuthConfirmPassword('');
           }
         } catch (err) { 
-          if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') setAuthError('帳號或密碼錯誤');
+          if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') setAuthError('帳號或密碼錯誤');
           else if (err.code === 'auth/email-already-in-use') setAuthError('此信箱已被註冊');
-          else setAuthError('發生錯誤：請確認Firebase Authentication已開啟'); 
+          else setAuthError('發生錯誤：' + err.message); 
         }
       };
 
-      const handleLogout = () => { auth.signOut(); setCurrentTab('tasks'); setViewMode('week'); };
+      const handleLogout = () => { auth.signOut(); setCurrentTab('tasks'); setViewMode('week'); setReadingSubTab('list'); setCurrentSubject('所有科目成績總覽'); };
+
+      // --- 刪除防呆機制觸發 ---
+      const triggerConfirmDelete = (deleteFn) => {
+        setPendingDeleteAction(() => deleteFn);
+        setIsConfirmModalOpen(true);
+      };
+      const executeDeleteAction = () => {
+        if (pendingDeleteAction) pendingDeleteAction();
+        setIsConfirmModalOpen(false);
+        setPendingDeleteAction(null);
+      };
 
       // --- Task ---
       const toggleTask = async (task) => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('tasks').doc(task.id).set({ ...task, completed: !task.completed });
-      const handleDeleteTask = async (taskId) => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('tasks').doc(taskId).delete();
+      const handleDeleteTask = (taskId) => triggerConfirmDelete(async () => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('tasks').doc(taskId).delete());
       const handleSaveTask = async (e) => {
         e.preventDefault(); if (!newTaskTitle.trim() || !realUser) return;
         const finalDate = modalType === 'weekly' ? getStartOfWeek(modalDate) : modalDate;
@@ -398,7 +530,7 @@
         }
         setMemoInput(''); 
       };
-      const handleDeleteMemo = async (id) => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('memos').doc(id).delete();
+      const handleDeleteMemo = (id) => triggerConfirmDelete(async () => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('memos').doc(id).delete());
 
       // --- Countdown ---
       const openCountdownModal = (cd = null) => {
@@ -415,8 +547,25 @@
         }
         setIsCountdownModalOpen(false); setCdTitle(''); setEditingCountdownId(null);
       };
-      const handleDeleteCountdown = async (id) => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('countdowns').doc(id).delete();
+      const handleDeleteCountdown = (id) => triggerConfirmDelete(async () => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('countdowns').doc(id).delete());
       const calculateDays = (targetDateStr) => Math.ceil((new Date(targetDateStr) - new Date(todayStr)) / (1000 * 60 * 60 * 24));
+
+      // --- Grades ---
+      const openGradeModal = (grade = null) => {
+        if (grade) { setGradeForm({ subject: grade.subject, examName: grade.examName, score: grade.score, date: grade.date }); setEditingGradeId(grade.id); }
+        else { setGradeForm({ subject: '', examName: '', score: '', date: todayStr }); setEditingGradeId(null); }
+        setIsGradeModalOpen(true);
+      };
+      const handleSaveGrade = async (e) => {
+        e.preventDefault();
+        if (!gradeForm.subject.trim() || !gradeForm.examName.trim() || !realUser) return;
+        const data = { subject: gradeForm.subject.trim(), examName: gradeForm.examName.trim(), score: Number(gradeForm.score) || 0, date: gradeForm.date, updatedAt: Date.now() };
+        if (editingGradeId) await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('grades').doc(editingGradeId).set(data, { merge: true });
+        else await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('grades').doc(Date.now().toString()).set({ ...data, createdAt: Date.now() });
+        setIsGradeModalOpen(false);
+        // 如果新增了不在當前列表的新科目，且當下不是總覽，則自動切過去 (可選)
+      };
+      const handleDeleteGrade = (id) => triggerConfirmDelete(async () => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('grades').doc(id).delete());
 
       // --- Books ---
       const handleSaveBook = async (e) => {
@@ -424,10 +573,11 @@
         await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('books').doc(Date.now().toString()).set({ title: newBookTitle.trim(), createdAt: Date.now() });
         setNewBookTitle(''); setIsBookModalOpen(false);
       };
-      const handleDeleteBook = async (id) => {
-        if(!window.confirm("確定刪除這本書及所有相關章節進度？")) return;
-        await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('books').doc(id).delete();
-        chapters.filter(c => c.bookId === id).forEach(async (c) => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('chapters').doc(c.id).delete());
+      const handleDeleteBook = (id) => {
+        triggerConfirmDelete(async () => {
+          await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('books').doc(id).delete();
+          chapters.filter(c => c.bookId === id).forEach(async (c) => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('chapters').doc(c.id).delete());
+        });
       };
       const handleSaveChapter = async (e) => {
         e.preventDefault(); if (!chapterForm.title.trim() || !realUser || !targetBookIdForChapter) return;
@@ -441,13 +591,28 @@
         else await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('chapters').doc(now.toString()).set({ ...data, createdAt: now });
         setIsChapterModalOpen(false);
       };
-      const handleDeleteChapter = async (id) => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('chapters').doc(id).delete();
+      const handleDeleteChapter = (id) => triggerConfirmDelete(async () => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('chapters').doc(id).delete());
       const openChapterModal = (bookId, chapter = null) => {
         setTargetBookIdForChapter(bookId);
         if (chapter) { setChapterForm({ title: chapter.title, startPage: chapter.startPage || '', endPage: chapter.endPage || '', currentPage: chapter.currentPage || '', notes: chapter.notes || '' }); setEditingChapterId(chapter.id); } 
         else { setChapterForm({ title: '', startPage: '', endPage: '', currentPage: '', notes: '' }); setEditingChapterId(null); }
         setIsChapterModalOpen(true);
       };
+
+      // --- 閱讀紀錄 ---
+      const openRecordModal = (record = null) => {
+        if (record) { setRecordForm({ bookTitle: record.bookTitle, date: record.date, startPage: record.startPage, endPage: record.endPage, notes: record.notes || '' }); setEditingRecordId(record.id); } 
+        else { setRecordForm({ bookTitle: '', date: todayStr, startPage: '', endPage: '', notes: '' }); setEditingRecordId(null); }
+        setIsRecordModalOpen(true);
+      };
+      const handleSaveRecord = async (e) => {
+        e.preventDefault(); if (!recordForm.bookTitle.trim() || !realUser) return;
+        const data = { bookTitle: recordForm.bookTitle.trim(), date: recordForm.date, startPage: parseInt(recordForm.startPage) || 0, endPage: parseInt(recordForm.endPage) || 0, notes: recordForm.notes || '', updatedAt: Date.now() };
+        if (editingRecordId) await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('readingRecords').doc(editingRecordId).set(data, { merge: true });
+        else await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('readingRecords').doc(Date.now().toString()).set({ ...data, createdAt: Date.now() });
+        setIsRecordModalOpen(false);
+      };
+      const handleDeleteRecord = (id) => triggerConfirmDelete(async () => await db.collection('artifacts').doc(appIdStr).collection('users').doc(realUser.uid).collection('readingRecords').doc(id).delete());
 
       // --- Profile ---
       const handleImageUpload = (e) => {
@@ -492,55 +657,68 @@
         );
       }
 
-      // 安全分離備忘錄與倒數日的排序，確保不會造成崩潰
-      const renderMemo = () => {
-        const sortedMemos = [...memos].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-        return (
-          <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
-            <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>備忘錄</h2></div>
-            <div className={`mb-8 p-5 ${theme.card} rounded-2xl border ${theme.border} shadow-sm focus-within:border-[#9ba8a2] transition-colors`}>
-              <textarea ref={memoInputRef} value={memoInput} onChange={(e) => setMemoInput(e.target.value)} placeholder="想到什麼，就寫下來吧..." className={`w-full bg-transparent resize-none outline-none text-[15px] leading-relaxed ${theme.textMain} placeholder:text-[#cccbcb] min-h-[100px]`} />
-              <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-dashed border-[#ebeae5]">
-                {editingMemoId && <button onClick={() => { setEditingMemoId(null); setMemoInput(''); }} className={`px-4 py-2 text-[#a3a6a1] text-[12px] tracking-widest font-medium rounded-xl hover:bg-gray-50 transition-colors`}>取消</button>}
-                <button onClick={handleSaveMemo} className={`px-6 py-2 ${theme.primary} text-white text-[12px] tracking-widest font-medium rounded-xl ${theme.primaryHover} transition-colors`}>{editingMemoId ? '更 新' : '儲 存'}</button>
-              </div>
-            </div>
-            <div className={`bg-white rounded-2xl border ${theme.border} py-2 px-2 shadow-sm`}>
-              {sortedMemos.map((memo, index) => (
-                <div key={memo.id}>
-                  <SwipeableGenericItem item={memo} onEdit={handleEditMemo} onDelete={handleDeleteMemo} isOpen={openSwipeId === memo.id} onOpen={() => setOpenSwipeId(memo.id)} onClose={() => setOpenSwipeId(null)}>
-                    <p className={`text-[15px] leading-loose tracking-wide ${theme.textMain} whitespace-pre-wrap`}>{memo.content}</p>
-                    <div className="flex items-center justify-end mt-3"><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>{formatTimestamp(memo.createdAt)}</span></div>
-                  </SwipeableGenericItem>
-                  {index < sortedMemos.length - 1 && <hr className={`border-t border-dashed ${theme.border} my-1 mx-2`} />}
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      };
+      // --- 渲染成績區塊 ---
+      const renderGrades = () => {
+        const uniqueSubjects = ['所有科目成績總覽', ...Array.from(new Set(grades.map(g => g.subject)))];
+        const isAll = currentSubject === '所有科目成績總覽';
+        let displayGrades = isAll ? grades : grades.filter(g => g.subject === currentSubject);
+        displayGrades = [...displayGrades].sort((a,b) => new Date(b.date) - new Date(a.date)); // 列表以時間新到舊排序
 
-      const renderCountdowns = () => {
-        const sortedCountdowns = [...countdowns].sort((a,b) => new Date(a.date) - new Date(b.date));
         return (
           <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
-            <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>倒數日</h2><button onClick={() => openCountdownModal()} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} tracking-wide`}><i className="fas fa-plus"></i> 新增</button></div>
+            {/* 標題與選單列 */}
+            <div className="flex items-center justify-between mb-8 px-2 relative" id="subject-menu-container">
+              <div className="flex items-center gap-3 relative">
+                <button onClick={() => setIsSubjectMenuOpen(!isSubjectMenuOpen)} className={`text-lg ${theme.textMuted} hover:${theme.primaryText} transition-colors p-1`} title="切換科目">
+                  <i className="fas fa-bars"></i>
+                </button>
+                <h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>{currentSubject}</h2>
+                
+                {/* 下拉選單 */}
+                {isSubjectMenuOpen && (
+                  <div className="absolute top-10 left-0 w-56 bg-white border border-[#ebeae5] shadow-lg rounded-2xl py-2 z-50 animate-in slide-in-from-top-2 duration-200">
+                    {uniqueSubjects.map((subj, idx) => (
+                      <button 
+                        key={idx} 
+                        onClick={() => { setCurrentSubject(subj); setIsSubjectMenuOpen(false); }}
+                        className={`w-full text-left px-5 py-3 text-sm tracking-widest transition-colors ${currentSubject === subj ? 'bg-[#f0f2f1] text-[#6a7c75] font-medium' : 'text-[#5c5d5a] hover:bg-gray-50'}`}
+                      >
+                        {subj}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => openGradeModal()} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} transition-colors tracking-wide`}>
+                <i className="fas fa-plus"></i> 新增紀錄
+              </button>
+            </div>
+
+            {/* 圖表區塊 */}
+            {grades.length > 0 ? (
+              <GradeChart grades={grades} currentSubject={currentSubject} />
+            ) : (
+              <div className={`py-12 text-center text-sm tracking-wider ${theme.textMuted} bg-white rounded-3xl border ${theme.border} border-dashed mb-6`}>
+                尚無成績紀錄，點擊右上角新增吧！
+              </div>
+            )}
+
+            {/* 列表區塊 */}
             <div className="space-y-3">
-              {sortedCountdowns.map(cd => {
-                const days = calculateDays(cd.date);
-                return (
-                  <SwipeableGenericItem key={cd.id} item={cd} onEdit={() => openCountdownModal(cd)} onDelete={handleDeleteCountdown} isOpen={openSwipeId === cd.id} onOpen={() => setOpenSwipeId(cd.id)} onClose={() => setOpenSwipeId(null)}>
-                    <div className="flex items-center justify-between">
-                      <div><h3 className={`text-[15px] font-medium tracking-wide ${theme.textMain} mb-1`}>{cd.title}</h3><p className={`text-[12px] tracking-wider ${theme.textMuted}`}>{cd.date.replace(/-/g, '.')}</p></div>
-                      <div className="text-right">
-                        {days === 0 ? <span className={`text-xl font-medium ${theme.primaryText} tracking-widest`}>TODAY</span> : (
-                          <div className="flex items-baseline gap-1"><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>{days < 0 ? '已過' : '剩餘'}</span><span className={`text-2xl font-medium ${days < 0 ? theme.textMuted : theme.primaryText}`}>{Math.abs(days)}</span><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>天</span></div>
-                        )}
-                      </div>
+              {displayGrades.map(grade => (
+                <SwipeableGenericItem key={grade.id} item={grade} onEdit={() => openGradeModal(grade)} onDelete={handleDeleteGrade} isOpen={openSwipeId === grade.id} onOpen={() => setOpenSwipeId(grade.id)} onClose={() => setOpenSwipeId(null)}>
+                  <div className="w-full flex flex-col gap-1">
+                    <div className="flex items-baseline justify-between">
+                      <span className={`text-[11px] tracking-wider font-semibold text-[#8ca1a5]`}>{isAll ? grade.subject : 'EXAM RECORD'}</span>
+                      <span className={`text-[11px] ${theme.textMuted} tracking-wider`}>{grade.date.replace(/-/g, '.')}</span>
                     </div>
-                  </SwipeableGenericItem>
-                );
-              })}
+                    <div className="flex items-center justify-between mt-1">
+                      <h3 className={`text-[16px] font-medium tracking-wide ${theme.textMain} truncate pr-4`}>{grade.examName}</h3>
+                      <span className={`text-xl font-medium tracking-widest ${theme.primaryText}`}>{grade.score}</span>
+                    </div>
+                  </div>
+                </SwipeableGenericItem>
+              ))}
             </div>
           </div>
         );
@@ -550,7 +728,7 @@
         <div className={`min-h-screen ${theme.bg} font-sans flex flex-col pb-24 md:pb-0`} onClick={() => setOpenSwipeId(null)}>
           <header className={`sticky top-0 z-30 bg-[#f7f6f2]/90 backdrop-blur-md px-6 py-5 flex items-center justify-between`}>
             <div className={`text-lg font-medium tracking-widest ${theme.textMain} flex items-center gap-2`}>MINIMAL<span className="text-[10px] text-[#a3a6a1]">CALENDAR</span></div>
-            <div className={`w-10 h-10 rounded-full cursor-pointer hover:opacity-80 transition-opacity`} onClick={() => setCurrentTab('profile')}>
+            <div className={`w-10 h-10 cursor-pointer hover:opacity-80 transition-opacity`} onClick={() => setCurrentTab('profile')}>
               <AvatarImage src={profile.avatar} />
             </div>
           </header>
@@ -617,9 +795,44 @@
               </div>
             )}
 
-            {currentTab === 'reading' && (
+            {currentTab === 'reading' && readingSubTab === 'records' && (
               <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
-                <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>閱讀清單</h2><button onClick={() => setIsBookModalOpen(true)} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} transition-colors tracking-wide`}><i className="fas fa-plus"></i> 新增書籍</button></div>
+                <div className="flex items-center justify-between mb-8 px-2">
+                  <div className="flex items-center gap-3">
+                    <h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>閱讀紀錄</h2>
+                    <button onClick={() => setReadingSubTab('list')} className={`text-sm ${theme.textMuted} hover:${theme.primaryText} transition-colors p-1.5`} title="切換至閱讀清單"><i className="fas fa-exchange-alt"></i></button>
+                  </div>
+                  <button onClick={() => openRecordModal()} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} transition-colors tracking-wide`}><i className="fas fa-plus"></i> 增加紀錄</button>
+                </div>
+                <div className="space-y-4">
+                  {[...readingRecords].sort((a,b) => (b.date > a.date ? 1 : -1)).map(record => {
+                    const pages = (record.endPage && record.startPage) ? (record.endPage - record.startPage) : 0;
+                    return (
+                      <SwipeableGenericItem key={record.id} item={record} onEdit={openRecordModal} onDelete={handleDeleteRecord} isOpen={openSwipeId === record.id} onOpen={() => setOpenSwipeId(record.id)} onClose={() => setOpenSwipeId(null)}>
+                        <div className="w-full flex flex-col gap-2">
+                          <div className="flex items-baseline justify-between"><span className="text-[11px] tracking-wider text-[#9ba8a2] font-semibold">READING LOG</span><span className={`text-[11px] ${theme.textMuted} tracking-wider`}>{record.date.replace(/-/g, '.')}</span></div>
+                          <h3 className={`text-[16px] font-medium tracking-wide ${theme.textMain}`}>{record.bookTitle}</h3>
+                          <div className="flex items-center gap-4 text-[12px] text-gray-500">
+                            <span>第 {record.startPage} - {record.endPage} 頁</span><span className="text-[11px] bg-[#f0f2f1] text-[#6a7c75] px-2 py-0.5 rounded-md">讀了 {Math.max(0, pages)} 頁</span>
+                          </div>
+                          {record.notes && <p className={`mt-1 text-[13px] ${theme.textMuted} leading-relaxed bg-[#fbfaf9] p-2.5 rounded-xl border border-[#f3f2ee]`}>{record.notes}</p>}
+                        </div>
+                      </SwipeableGenericItem>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {currentTab === 'reading' && readingSubTab === 'list' && (
+              <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
+                <div className="flex items-center justify-between mb-8 px-2">
+                  <div className="flex items-center gap-3">
+                    <h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>閱讀清單</h2>
+                    <button onClick={() => setReadingSubTab('records')} className={`text-sm ${theme.textMuted} hover:${theme.primaryText} transition-colors p-1.5`} title="切換至閱讀紀錄"><i className="fas fa-exchange-alt"></i></button>
+                  </div>
+                  <button onClick={() => setIsBookModalOpen(true)} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} transition-colors tracking-wide`}><i className="fas fa-plus"></i> 新增書籍</button>
+                </div>
                 <div className="space-y-4">
                   {books.map(book => {
                     const bookChapters = [...chapters.filter(c => c.bookId === book.id)].sort((a,b) => (parseInt(a.startPage) || 0) - (parseInt(b.startPage) || 0)); 
@@ -664,8 +877,53 @@
               </div>
             )}
 
-            {currentTab === 'memo' && renderMemo()}
-            {currentTab === 'countdown' && renderCountdowns()}
+            {currentTab === 'grades' && renderGrades()}
+
+            {currentTab === 'memo' && (
+              <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
+                <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>備忘錄</h2></div>
+                <div className={`mb-8 p-5 ${theme.card} rounded-2xl border ${theme.border} shadow-sm focus-within:border-[#9ba8a2] transition-colors`}>
+                  <textarea ref={memoInputRef} value={memoInput} onChange={(e) => setMemoInput(e.target.value)} placeholder="想到什麼，就寫下來吧..." className={`w-full bg-transparent resize-none outline-none text-[15px] leading-relaxed ${theme.textMain} placeholder:text-[#cccbcb] min-h-[100px]`} />
+                  <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-dashed border-[#ebeae5]">
+                    {editingMemoId && <button onClick={() => { setEditingMemoId(null); setMemoInput(''); }} className={`px-4 py-2 text-[#a3a6a1] text-[12px] tracking-widest font-medium rounded-xl hover:bg-gray-50 transition-colors`}>取消</button>}
+                    <button onClick={handleSaveMemo} className={`px-6 py-2 ${theme.primary} text-white text-[12px] tracking-widest font-medium rounded-xl ${theme.primaryHover} transition-colors`}>{editingMemoId ? '更 新' : '儲 存'}</button>
+                  </div>
+                </div>
+                <div className={`bg-white rounded-2xl border ${theme.border} py-2 px-2 shadow-sm`}>
+                  {/* 使用陣列拷貝防止 React 原地修改狀態崩潰 */}
+                  {[...memos].sort((a,b) => (b.createdAt || 0) - (a.createdAt || 0)).map((memo, index, arr) => (
+                    <React.Fragment key={memo.id}>
+                      <SwipeableMemoItem memo={memo} onEdit={handleEditMemo} onDelete={handleDeleteMemo} isOpen={openSwipeId === memo.id} onOpen={() => setOpenSwipeId(memo.id)} onClose={() => setOpenSwipeId(null)} />
+                      {index < arr.length - 1 && <hr className={`border-t border-dashed ${theme.border} my-1 mx-2`} />}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {currentTab === 'countdown' && (
+              <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
+                <div className="flex items-center justify-between mb-8 px-2"><h2 className={`text-lg font-medium tracking-widest ${theme.textMain}`}>倒數日</h2><button onClick={() => openCountdownModal()} className={`text-sm ${theme.primary} text-white px-4 py-1.5 rounded-full flex items-center gap-1 ${theme.primaryHover} tracking-wide`}><i className="fas fa-plus"></i> 新增</button></div>
+                <div className="space-y-3">
+                  {/* 使用陣列拷貝防止崩潰 */}
+                  {[...countdowns].sort((a,b) => new Date(a.date) - new Date(b.date)).map(cd => {
+                    const days = calculateDays(cd.date);
+                    return (
+                      <SwipeableGenericItem key={cd.id} item={cd} onEdit={() => openCountdownModal(cd)} onDelete={handleDeleteCountdown} isOpen={openSwipeId === cd.id} onOpen={() => setOpenSwipeId(cd.id)} onClose={() => setOpenSwipeId(null)}>
+                        <div className="flex items-center justify-between w-full">
+                          <div><h3 className={`text-[15px] font-medium tracking-wide ${theme.textMain} mb-1`}>{cd.title}</h3><p className={`text-[12px] tracking-wider ${theme.textMuted}`}>{cd.date.replace(/-/g, '.')}</p></div>
+                          <div className="text-right">
+                            {days === 0 ? <span className={`text-xl font-medium ${theme.primaryText} tracking-widest`}>TODAY</span> : (
+                              <div className="flex items-baseline gap-1"><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>{days < 0 ? '已過' : '剩餘'}</span><span className={`text-2xl font-medium ${days < 0 ? theme.textMuted : theme.primaryText}`}>{Math.abs(days)}</span><span className={`text-[11px] ${theme.textMuted} tracking-widest`}>天</span></div>
+                            )}
+                          </div>
+                        </div>
+                      </SwipeableGenericItem>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {currentTab === 'profile' && (
               <div className="max-w-md mx-auto mt-6 animate-in fade-in duration-300">
@@ -709,14 +967,16 @@
               {[
                 { id: 'tasks', icon: 'fa-calendar-alt', label: '任務' },
                 { id: 'reading', icon: 'fa-book-open', label: '閱讀' },
+                { id: 'grades', icon: 'fa-chart-line', label: '成績' }, /* 新增成績選單 */
                 { id: 'memo', icon: 'fa-file-alt', label: '備忘' },
                 { id: 'countdown', icon: 'fa-clock', label: '倒數' }
               ].map(tab => (
-                <button key={tab.id} onClick={() => setCurrentTab(tab.id)} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-colors md:flex-row md:px-4 md:py-2 md:gap-2 flex-1 ${currentTab === tab.id ? `${theme.primaryText} md:bg-[#f0f2f1]` : `${theme.textMuted}`}`}><i className={`fas ${tab.icon} text-xl`}></i><span className="text-[10px] md:text-xs tracking-widest">{tab.label}</span></button>
+                <button key={tab.id} onClick={() => setCurrentTab(tab.id)} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-colors md:flex-row md:px-4 md:py-2 md:gap-2 flex-1 ${currentTab === tab.id ? `${theme.primaryText} md:bg-[#f0f2f1]` : `${theme.textMuted}`}`}><i className={`fas ${tab.icon} text-lg md:text-xl`}></i><span className="text-[10px] md:text-xs tracking-widest">{tab.label}</span></button>
               ))}
             </div>
           </nav>
 
+          {/* 各式 Modal 區 */}
           {isTaskModalOpen && (
             <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
               <div className={`${theme.card} w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6`}>
@@ -742,6 +1002,24 @@
                   <div><input type="text" autoFocus required value={cdTitle} onChange={e => setCdTitle(e.target.value)} placeholder="倒數目標..." className={`w-full px-0 py-2 bg-transparent border-b ${theme.border} outline-none text-[15px] ${theme.textMain}`} /></div>
                   <div><input type="date" required value={cdDate} onChange={e => setCdDate(e.target.value)} className={`w-full px-0 py-2 bg-transparent border-b ${theme.border} outline-none text-[15px] ${theme.textMain}`} /></div>
                   <div className="pt-4"><button type="submit" className={`w-full py-3 ${theme.primary} text-white rounded-xl text-sm tracking-widest`}>{editingCountdownId ? '儲 存' : '新 增'}</button></div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* grades modal */}
+          {isGradeModalOpen && (
+            <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
+              <div className={`${theme.card} w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6 max-h-[90vh] overflow-y-auto custom-scrollbar`}>
+                <div className="flex justify-between items-center mb-6"><h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>{editingGradeId ? '編輯成績紀錄' : '新增成績紀錄'}</h3><button onClick={() => setIsGradeModalOpen(false)} className={`p-1 ${theme.textMuted}`}><i className="fas fa-times text-lg"></i></button></div>
+                <form onSubmit={handleSaveGrade} className="space-y-6">
+                  <div><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>科目名稱</label><input type="text" autoFocus required value={gradeForm.subject} onChange={e => setGradeForm({...gradeForm, subject: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} placeholder="例如: 國文、微積分" /></div>
+                  <div><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>考試名稱</label><input type="text" required value={gradeForm.examName} onChange={e => setGradeForm({...gradeForm, examName: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} placeholder="例如: 期中考、多益" /></div>
+                  <div className="flex gap-4">
+                    <div className="flex-1"><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>成績 (分數)</label><input type="number" step="any" required value={gradeForm.score} onChange={e => setGradeForm({...gradeForm, score: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} /></div>
+                    <div className="flex-1"><label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>考試日期</label><input type="date" required value={gradeForm.date} onChange={e => setGradeForm({...gradeForm, date: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} /></div>
+                  </div>
+                  <div className="pt-2"><button type="submit" className={`w-full py-3 ${theme.primary} text-white rounded-xl text-sm tracking-widest`}>{editingGradeId ? '儲 存' : '新 增'}</button></div>
                 </form>
               </div>
             </div>
@@ -776,6 +1054,67 @@
               </div>
             </div>
           )}
+
+          {isRecordModalOpen && (
+            <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-50 flex items-end justify-center sm:items-center sm:p-4">
+              <div className={`${theme.card} w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-lg border border-[#ebeae5] p-6 max-h-[90vh] overflow-y-auto custom-scrollbar`}>
+                <div className="flex justify-between items-center mb-6"><h3 className={`text-sm tracking-widest font-medium ${theme.textMain}`}>{editingRecordId ? '編輯閱讀紀錄' : '增加紀錄'}</h3><button onClick={() => setIsRecordModalOpen(false)} className={`p-1 ${theme.textMuted}`}><i className="fas fa-times text-lg"></i></button></div>
+                <form onSubmit={handleSaveRecord} className="space-y-6">
+                  <div>
+                    <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>書名</label>
+                    <input type="text" required value={recordForm.bookTitle} onChange={e => setRecordForm({...recordForm, bookTitle: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} placeholder="輸入書籍名稱..." />
+                  </div>
+                  <div>
+                    <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>閱讀日期</label>
+                    <input type="date" required value={recordForm.date} onChange={e => setRecordForm({...recordForm, date: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} />
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>起頁 (FROM)</label>
+                      <input type="number" min="0" required value={recordForm.startPage} onChange={e => setRecordForm({...recordForm, startPage: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} />
+                    </div>
+                    <div className="flex-1">
+                      <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>迄頁 (TO)</label>
+                      <input type="number" min="0" required value={recordForm.endPage} onChange={e => setRecordForm({...recordForm, endPage: e.target.value})} className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl`} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={`block text-[11px] tracking-widest ${theme.textMuted} mb-2`}>閱讀心得 / 筆記</label>
+                    <textarea value={recordForm.notes} onChange={e => setRecordForm({...recordForm, notes: e.target.value})} rows="4" placeholder="今天讀到什麼有趣的內容..." className={`w-full px-4 py-3 bg-[#fbfaf9] border ${theme.border} rounded-xl resize-none`} />
+                  </div>
+                  <div className="pt-2"><button type="submit" className={`w-full py-3 ${theme.primary} text-white rounded-xl text-sm tracking-widest`}>{editingRecordId ? '儲 存' : '確 認'}</button></div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* 全域極簡風「確認刪除防呆 Modal」 */}
+          {isConfirmModalOpen && (
+            <div className="fixed inset-0 bg-[#f7f6f2]/80 backdrop-blur-sm z-[99] flex items-center justify-center p-4">
+              <div className={`${theme.card} w-full max-w-xs rounded-2xl shadow-xl border border-[#ebeae5] p-6 text-center animate-in zoom-in-95 duration-200`}>
+                <div className="w-12 h-12 bg-red-50 text-[#c29b95] rounded-full flex items-center justify-center mx-auto mb-4">
+                  <i className="fas fa-exclamation-triangle text-lg"></i>
+                </div>
+                <h3 className={`text-base font-bold text-gray-800 mb-2`}>確定要刪除嗎？</h3>
+                <p className={`text-xs ${theme.textMuted} mb-6 leading-relaxed`}>此操作刪除後將無法還原，請確認是否繼續。</p>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => { setIsConfirmModalOpen(false); setPendingDeleteAction(null); }} 
+                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    我再想想
+                  </button>
+                  <button 
+                    onClick={executeDeleteAction} 
+                    className="flex-1 py-2.5 rounded-xl bg-[#c29b95] text-white text-xs font-semibold hover:bg-[#b087a9] transition-colors"
+                  >
+                    確認刪除
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       );
     }
